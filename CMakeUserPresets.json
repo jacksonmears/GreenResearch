@@ -1,0 +1,17 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "x64-debug-user",
+            "displayName": "x64 Debug (User)",
+            "description": "x64 debug build using user SDL3 path",
+            "generator": "MinGW Makefiles",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "20",
+                "SDL3_INCLUDE_DIR": "C:/libs/SDL3/x86_64-w64-mingw32/include",
+                "SDL3_LIBRARY": "C:/libs/SDL3/x86_64-w64-mingw32/lib/libSDL3.dll.a"
+            }
+        }
+    ]
+}

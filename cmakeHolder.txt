@@ -1,0 +1,21 @@
+
+cmake_minimum_required(VERSION 3.25)
+
+project(myMinecraft)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Add main executable
+add_executable(${PROJECT_NAME} main.cpp)
+
+# Include SDL3 headers
+target_include_directories(${PROJECT_NAME} PRIVATE
+    C:/libs/SDL3/x86_64-w64-mingw32/include
+)
+
+# Link SDL3 and OpenGL
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    C:/libs/SDL3/x86_64-w64-mingw32/lib/libSDL3.dll.a
+    opengl32
+)
