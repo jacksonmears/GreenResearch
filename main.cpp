@@ -1,6 +1,7 @@
-
+#include "Shape.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+
 
 int main(int argc, char* argv[]) {
 
@@ -26,9 +27,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    int ballX = 320, ballY = 240, radius = 50;
-    int speed = 5; // pixels per key press
-
+    Ball ball(50, 1.0, 320, 240, SDL_Color{255, 0, 0, 255});
+    int speed = 5;
 
     // Check that the window was successfully created
     if (window == NULL) {
@@ -46,10 +46,10 @@ int main(int argc, char* argv[]) {
             }
             else if (event.type == SDL_EVENT_KEY_DOWN) {
                 switch (event.key.key) {
-                    case SDLK_UP:    ballY -= speed; break;
-                    case SDLK_DOWN:  ballY += speed; break;
-                    case SDLK_LEFT:  ballX -= speed; break;
-                    case SDLK_RIGHT: ballX += speed; break;
+                    case SDLK_UP:    ball.y -= speed; break;
+                    case SDLK_DOWN:  ball.y += speed; break;
+                    case SDLK_LEFT:  ball.x -= speed; break;
+                    case SDLK_RIGHT: ball.x += speed; break;
                 }
             }
         }
@@ -60,16 +60,7 @@ int main(int argc, char* argv[]) {
         SDL_RenderClear(renderer);
 
         // Draw a red circle
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        for (int w = 0; w < radius * 2; w++) {
-            for (int h = 0; h < radius * 2; h++) {
-                int dx = radius - w;
-                int dy = radius - h;
-                if (dx * dx + dy * dy <= radius * radius) {
-                    SDL_RenderPoint(renderer, ballX + dx, ballY + dy);
-                }
-            }
-        }
+        ball.render(renderer);
 
         SDL_RenderPresent(renderer);
     }

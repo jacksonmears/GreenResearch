@@ -1,0 +1,27 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build main.cpp",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-std=c++20",
+                "-IC:/libs/SDL3/x86_64-w64-mingw32/include",     // SDL3 headers
+                "-IC:/libs/GLEW/include",                        // GLEW headers
+                "-LC:/libs/SDL3/x86_64-w64-mingw32/lib",        // SDL3 library
+                "-LC:/libs/GLEW/lib/Release/x64",                            // GLEW library (.a or .lib for MinGW)
+                "main.cpp",
+                "-lSDL3",                                        // link SDL3
+                "-lglew32",                                      // link GLEW
+                "-o",
+                "main.exe"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}

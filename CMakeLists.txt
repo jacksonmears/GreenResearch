@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD 20)
 # Add all source files (main.cpp and Ball.cpp)
 add_executable(myMinecraft
     main.cpp
-    objects/Ball.cpp
 )
 
 # Tell CMake where to find SDL3 headers
