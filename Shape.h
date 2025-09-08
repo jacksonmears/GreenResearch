@@ -1,40 +1,73 @@
 #pragma once
 #include <SDL3/SDL.h>
-
-
+#include <cmath>
+#include "Config.h"
+#include "Ground.h"
 
 class Shape {
 public:
     int width, height;
-    double mass, x, y, acceleration, velocity;
+    double mass, x, y, cor;  // coefficient of restitution
+    double accelerationY = Config::get().gravity, accelerationX = 0;
+    double velocityY = 0, velocityX = 0;
+    double frictionGround = 0.15; // horizontal friction on ground
+    double frictionWall   = 0.95; // vertical friction on wall
     SDL_Color color;
 
+    Shape(int width_, int height_, double mass_, double x_, double y_, double cor_, SDL_Color color_) 
+        : width(width_), height(height_), mass(mass_), x(x_), y(y_), cor(cor_), color(color_) {}
 
-    Shape(int width_, int height_, double mass_, double x_, double y_, double acceleration_, double velocity_, SDL_Color color_) 
-        : width(width_), height(height_), mass(mass_), x(x_), y(y_), acceleration(acceleration_), velocity(velocity_), color(color_) {}
+    virtual void render(SDL_Renderer* renderer) = 0;
 
-    virtual void render(SDL_Renderer* renderer) {
-        SDL_SetRenderDrawColor(renderer, color.r, color.g, color.g, color.a);
+    void update(double deltaTime, Ground* ground) {
+        // Gravity acceleration (mass included implicitly)
+        double accelY = accelerationY;
+        double accelX = accelerationX; // can be 0 unless a force is applied
 
-        SDL_FRect rect = {
-            static_cast<float>(x),
-            static_cast<float>(y),
-            static_cast<float>(width),
-            static_cast<float>(height)
-        };
+        // Update velocities
+        velocityY += accelY * deltaTime;
+        velocityX += accelX * deltaTime;
 
-        SDL_RenderFillRect(renderer, &rect);
+        // Update positions
+        y += velocityY * deltaTime;
+        x += velocityX * deltaTime;
+
+        // --- Wall collisions ---
+        if (x - width <= 0) {
+            x = width;
+            velocityX = -velocityX * cor;     // bounce horizontally
+            velocityY *= frictionWall;       // vertical energy loss on wall hit
+        } 
+        else if (x + width >= Config::get().SCREEN_WIDTH) {
+            x = Config::get().SCREEN_WIDTH - height;
+            velocityX = -velocityX * cor;
+            velocityY *= frictionWall;
+        }
+
+        // Stop tiny horizontal velocity
+        if (std::abs(velocityX) < 0.001) velocityX = 0;
+
+        // --- Ground collision ---
+        if (y + height >= ground->y) {
+            y = ground->y - height;
+
+            double effective_cor = cor * ground->cor;
+            velocityY = -velocityY * effective_cor;
+
+            // Apply horizontal friction while on the ground
+            velocityX *= frictionGround;
+
+            if (std::abs(velocityY) < 0.001) velocityY = 0;
+        }
     }
-
 };
-
-
 
 class Ball : public Shape {
 public:
-    Ball(int radius, double mass_, double x_, double y_, SDL_Color color_) 
-        : Shape(radius * 2, radius * 2, mass_, x_, y_, 0, 0, color_), radius(radius) {}
+    int radius;
 
+    Ball(int radius_, double mass_, double x_, double y_, double cor_, SDL_Color color_) 
+        : Shape(radius_ * 2, radius_ * 2, mass_, x_, y_, cor_, color_), radius(radius_) {}
 
     void render(SDL_Renderer* renderer) override {
         SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
@@ -48,7 +81,4 @@ public:
             }
         }
     }
-
-private:
-    int radius;
 };

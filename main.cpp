@@ -1,6 +1,9 @@
 #include "Shape.h"
+#include "Ground.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include "Config.h"
+
 
 
 int main(int argc, char* argv[]) {
@@ -8,13 +11,18 @@ int main(int argc, char* argv[]) {
     SDL_Window *window;                    // Declare a pointer
     bool done = false;
 
+    double screen_width = Config::get().SCREEN_WIDTH;
+    double screen_height = Config::get().SCREEN_HEIGHT;
+    double gravity = Config::get().gravity;
+    double VELO_CHANGE = 5;
+
     SDL_Init(SDL_INIT_VIDEO);              // Initialize SDL3
 
     // Create an application window with the following settings:
     window = SDL_CreateWindow(
         "An SDL3 window",                  // window title
-        640,                               // width, in pixels
-        480,                               // height, in pixels
+        screen_width,                               // width, in pixels
+        screen_height,                               // height, in pixels
         SDL_WINDOW_OPENGL                  // flags - see below
     );
 
@@ -27,8 +35,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Ball ball(50, 1.0, 320, 240, SDL_Color{255, 0, 0, 255});
-    int speed = 5;
+    SDL_Color red = {255, 0, 0, 255};
+    Ball ball(20, 45, screen_height / 2.0, 0, 0.95, red); // start at top middle (dont forget to change back to 0.8)
+
+    Ground* activeGround = new Cartpath();
+
 
     // Check that the window was successfully created
     if (window == NULL) {
@@ -46,10 +57,10 @@ int main(int argc, char* argv[]) {
             }
             else if (event.type == SDL_EVENT_KEY_DOWN) {
                 switch (event.key.key) {
-                    case SDLK_UP:    ball.y -= speed; break;
-                    case SDLK_DOWN:  ball.y += speed; break;
-                    case SDLK_LEFT:  ball.x -= speed; break;
-                    case SDLK_RIGHT: ball.x += speed; break;
+                    // case SDLK_UP:    ball.y -= speed; break;
+                    // case SDLK_DOWN:  ball.y += speed; break;
+                    case SDLK_LEFT:  ball.velocityX -= VELO_CHANGE; break;
+                    case SDLK_RIGHT: ball.velocityX += VELO_CHANGE; break;
                 }
             }
         }
@@ -60,7 +71,10 @@ int main(int argc, char* argv[]) {
         SDL_RenderClear(renderer);
 
         // Draw a red circle
+        double deltaTime = 1.0 / 5000.0; // assuming 60 FPS
+        ball.update(deltaTime, activeGround);
         ball.render(renderer);
+        activeGround->render(renderer);
 
         SDL_RenderPresent(renderer);
     }
