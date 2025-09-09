@@ -9,26 +9,27 @@
 
 class Ball {
 public:
-    int radius;
+    double radius;
     double mass, I, x, y, restitution;
     double g = Config::get().gravity * Config::get().pixelsPerMeter;
     double accelerationY = g, accelerationX = 0;
-    double alpha, w = -10; //angular acceleration and angular velocity             
+    double alpha, w = -300; //angular acceleration and angular velocity             
     double velocityY = 0, velocityX = 0;
-    double mu_b = 0.01, mu_k, mu_r; // coefficient of friction for ball kinietic friction and rolling resistence
-    bool testSlide = false, testRoll = false;
+    double mu_b = 0.50, mu_k = 0.4, mu_r = 0.01; // coefficient of friction for ball kinietic friction and rolling resistence
+    double slipTolerance = 1e-2;
     SDL_Color color;
 
     Ball(int radius_, double mass_, double x_, double y_, double restitution_, SDL_Color color_)
         : radius(radius_), mass(mass_), x(x_), y(y_), restitution(restitution_), color(color_) 
         {
             double radius_m = radius / Config::get().pixelsPerMeter;
-            I = (2.0 / 5.0) * mass * radius_m * radius_m * 
-                Config::get().pixelsPerMeter * Config::get().pixelsPerMeter;
+            I = (2.0 / 5.0) * mass * radius_m * radius_m * Config::get().pixelsPerMeter * Config::get().pixelsPerMeter;
         }
 
 
     void resetVelocity() { velocityY = 0; velocityX = 0; w = 0; }
+
+    inline int fetchSign(double x) {return (x > 0.0) - (x < 0.0); }
 
     void update(Ground* ground) {
             double dt = Config::get().deltaTime;
@@ -41,11 +42,13 @@ public:
 
             // if x is out of bounds, move it back in and reflect velo and reduce velo via coef of restitution
             if (x + radius >= Config::get().SCREEN_WIDTH) {
+                std::cout << velocityX << std::endl;
                 x = Config::get().SCREEN_WIDTH - radius;
                 velocityX = -velocityX * restitution;
             }
 
             if (x - radius <= 0) {
+                std::cout << velocityX << std::endl;
                 x = radius;
                 velocityX = -velocityX * restitution;
             }
@@ -57,28 +60,35 @@ public:
 
                 // threshold where ball is firmly on ground (no more bouncing impulses)
                 if (velocityY <= accelerationY*dt*restitution) { 
+                    double v0 = velocityX;  // initial linear velocity 
+                    double w0 = w;          // initial anglular velocity
+                    double R = radius;      
+                    double s = v0 - w0 * R; // slip velocity at contact
+                    double m = mass;
+                    int sign;
 
                     double tr = (2*(velocityX - w*radius)) / (7*mu_k*g); // time to transition
                     double velocity_rolling_threshold = velocityX - mu_k*g*tr;  // linear velocity at the moment rolling should start
                     double angular_rolling_threshold = velocity_rolling_threshold/radius;  // angular velocity at the moment rolling should start
 
-                    if (velocityX <= velocity_rolling_threshold) {
-                        if (!testRoll) {
-                            std::cout << "rolling" << std::endl;
-                            testRoll = true;
-                        }
+                    if (abs(s) <= slipTolerance) {
                         double a_rolling = mu_r*g;  // linear acceleration due to rolling resistance
-                        velocityX -= mu_r*g*(dt-tr); // linear velocity while rolling
-                    }
-                    else {
-                        if (!testSlide) {
-                            std::cout << "slipping" << std::endl;
-                            testSlide = true;
+                        sign = fetchSign(v0); // check if v0 is pos or neg
+                        double dv = sign*a_rolling*dt; // linear velocity change as a function of time
+                        if (abs(dv) >= abs(v0)) {
+                            velocityX = 0.0; 
+                            w = 0.0;
+                        } else {
+                            velocityX = v0 - dv;
+                            w = velocityX / R;
                         }
+                        // velocityX -= mu_r*g*(dt-tr); // linear velocity while rolling
+                    } else {
+                        sign = fetchSign(s);
                         double a_linear = mu_k*g; // linear acceleration defined
-                        velocityX -= a_linear *dt; // linear velocity as function of time while sliding
+                        velocityX = v0 - sign * a_linear *dt; // linear velocity as function of time while sliding
                         alpha = (mu_k*mass*g*radius)/I; // angular acceleration due to friction torque
-                        w += alpha*dt; // angular veolocity as function of time
+                        w = w0 + sign * alpha *dt; // angular veolocity as function of time
                     }
 
                 }
@@ -88,8 +98,42 @@ public:
                     // need to reduce veloX from friction
                     // velocityX -= (velocityX>0 ? 1 : -1)*accelerationY*mu_b*dt; // very simply calcuation assuming no forces acting on ball besides mu per second thus dt (using accelerationY for simplicity as it's gravity)
 
-                    double effective_restitution = sqrt(restitution * ground->restitution);
-                    velocityY = -velocityY * effective_restitution; // partially reflect Y's velocity after contact with ground via restitution
+                    double theta = ground->angle;
+
+
+                    // Decompose velocity into normal and tangential components
+                    double Vn = velocityX*sin(theta) + velocityY*cos(theta); // normal velocity
+                    double Vt = velocityX*cos(theta) - velocityY*sin(theta); // tangential velocity
+
+                    double Jn = -(1 + restitution)*mass*Vn; // normal impulse with restitition
+
+                    double s = Vt - w*radius; // relative slip velocity
+
+                    // finding tangential impulse 
+                    double Jt;
+                    double Jt_stick = -(s / ((1/mass) + ((radius * radius)/I)));
+                    if (abs(Jt_stick) <= mu_b*fabs(Jn)) { // then stick
+                        Jt = Jt_stick;
+                    } else { // then slide
+                        Jt = -mu_b*fabs(Jn)*fetchSign(s);
+                    }
+
+                    // apply impulses
+                    double VnFinal = Vn + Jn/mass;
+                    double VtFinal = Vt + Jt / mass;
+                    w -= Jt*radius / I;
+
+                    // recompose
+                    velocityX = VnFinal*sin(theta) + VtFinal*cos(theta);
+                    velocityY = VnFinal*cos(theta) - VtFinal*sin(theta);
+
+
+
+
+
+
+                    // double effective_restitution = sqrt(restitution * ground->restitution);
+                    // velocityY = -velocityY * effective_restitution; // partially reflect Y's velocity after contact with ground via restitution
                 }
 
             }
@@ -110,8 +154,6 @@ public:
         }
     }
 
-
-protected:
 
 };
 
