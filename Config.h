@@ -2,8 +2,12 @@
 
 class Config {
 public:
-    double SCREEN_WIDTH = 800, SCREEN_HEIGHT = 600;
+    double SCREEN_WIDTH = 1800, SCREEN_HEIGHT = 1300;
     double gravity = 980;
+    double deltaTime = 1.0 / 5000;
+    double pixelsPerMeter = 100;
+    double massScale = 1.0;
+    const double PI = 3.141592653589793;
 
     static Config& get() {
         static Config instance;

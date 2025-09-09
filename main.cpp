@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_Color red = {255, 0, 0, 255};
-    Ball ball(20, 45, screen_height / 2.0, 0, 0.95, red); // start at top middle (dont forget to change back to 0.8)
+    Ball ball(20, 0.45, screen_width/2, 0, 0.95, red); // start at top middle (dont forget to change back to 0.8)
 
     Ground* activeGround = new Cartpath();
 
@@ -57,10 +57,17 @@ int main(int argc, char* argv[]) {
             }
             else if (event.type == SDL_EVENT_KEY_DOWN) {
                 switch (event.key.key) {
-                    // case SDLK_UP:    ball.y -= speed; break;
-                    // case SDLK_DOWN:  ball.y += speed; break;
+                    case SDLK_R: {
+                        ball.x = screen_height/2.0;
+                        ball.y = 0;
+                        ball.resetVelocity();
+                        break;
+                    }    
                     case SDLK_LEFT:  ball.velocityX -= VELO_CHANGE; break;
                     case SDLK_RIGHT: ball.velocityX += VELO_CHANGE; break;
+                    case SDLK_W: ball.y += 100; break;
+                    case SDLK_D: ball.omega += 5; break;
+                    case SDLK_A: ball.omega -= 5; break;
                 }
             }
         }
@@ -71,8 +78,7 @@ int main(int argc, char* argv[]) {
         SDL_RenderClear(renderer);
 
         // Draw a red circle
-        double deltaTime = 1.0 / 5000.0; // assuming 60 FPS
-        ball.update(deltaTime, activeGround);
+        ball.update(activeGround);
         ball.render(renderer);
         activeGround->render(renderer);
 

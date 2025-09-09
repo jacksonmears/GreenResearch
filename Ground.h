@@ -4,11 +4,13 @@
 
 class Ground {
 public:
-    double cor;     // coefficient of restitution (bounciness)
+    double restitution, fc;     // coefficient of restitution (bounciness) and friction coefficient
     double y;       // vertical position (top of ground)
     const double height = 5.0; // consistent height
+    double angle = 0; // in randians where 0 = horizontal
+    double roughness; // not totally sure that this is supposed to do
 
-    Ground(double cor_, double y_) : cor(cor_), y(y_) {}
+    Ground(double restitution_, double y_, double fc_) : restitution(restitution_), y(y_), fc(fc_) {}
     virtual ~Ground() = default;
 
     virtual void render(SDL_Renderer* renderer) = 0;
@@ -17,7 +19,7 @@ public:
 // Green ground
 class Green : public Ground {
 public:
-    Green() : Ground(0.5, Config::get().SCREEN_HEIGHT - 5.0) {} // 5 px from bottom
+    Green() : Ground(0.2, Config::get().SCREEN_HEIGHT - 5.0, 0.002) {} // 5 px from bottom
 
     void render(SDL_Renderer* renderer) override {
         SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // green
@@ -31,7 +33,7 @@ public:
 // Fairway ground
 class Fairway : public Ground {
 public:
-    Fairway() : Ground(0.7, Config::get().SCREEN_HEIGHT - 5.0) {} // same height
+    Fairway() : Ground(0.5, Config::get().SCREEN_HEIGHT - 5.0, 0.05) {} // same height
 
     void render(SDL_Renderer* renderer) override {
         SDL_SetRenderDrawColor(renderer, 160, 82, 45, 255); // brownish
@@ -45,7 +47,7 @@ public:
 // Cartpath ground
 class Cartpath : public Ground {
 public:
-    Cartpath() : Ground(1, Config::get().SCREEN_HEIGHT - 5.0) {} // same height
+    Cartpath() : Ground(0.9, Config::get().SCREEN_HEIGHT - 5.0, 0.001) {} // same height dont forget to change back to 0.9
 
     void render(SDL_Renderer* renderer) override {
         SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255); // gray
