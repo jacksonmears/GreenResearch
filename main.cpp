@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_Color red = {255, 0, 0, 255};
-    Ball ball(20, 0.45, screen_width/2, screen_height*0.75, 0.95, red); // start at top middle (dont forget to change back to 0.8)
+    Ball ball(20, 0.45, screen_width/2, screen_height*0.25, 0.95, red); // start at top middle (dont forget to change back to 0.8)
 
     Ground* activeGround = new Cartpath();
 
@@ -66,8 +66,8 @@ int main(int argc, char* argv[]) {
                     case SDLK_LEFT:  ball.velocityX -= VELO_CHANGE; break;
                     case SDLK_RIGHT: ball.velocityX += VELO_CHANGE; break;
                     case SDLK_W: ball.y += 100; break;
-                    case SDLK_D: ball.omega += 5; break;
-                    case SDLK_A: ball.omega -= 5; break;
+                    case SDLK_D: ball.omega += 10; break;
+                    case SDLK_A: ball.omega -= 10; break;
                 }
             }
         }
