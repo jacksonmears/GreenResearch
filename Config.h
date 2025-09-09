@@ -2,7 +2,7 @@
 
 class Config {
 public:
-    double SCREEN_WIDTH = 1800, SCREEN_HEIGHT = 1300;
+    double SCREEN_WIDTH = 1400, SCREEN_HEIGHT = 1000;
     double gravity = 980;
     double deltaTime = 1.0 / 5000;
     double pixelsPerMeter = 100;

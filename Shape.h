@@ -58,101 +58,112 @@ public:
                 applyWallFriction(dt);
             }
 
-            // --- Ground collision ---
+
             if (y + height/2 >= ground->y) {
-                std::cout << omega << std::endl;
                 // Prevent sinking into ground
                 y = ground->y - height/2;
 
                 double theta = ground->angle;
 
                 // Decompose velocity into normal and tangential components
-                double normal_velocity = velocityX*sin(theta) + velocityY*cos(theta);
+                double normal_velocity     = velocityX*sin(theta) + velocityY*cos(theta);
                 double tangential_velocity = velocityX*cos(theta) - velocityY*sin(theta);
 
-                // ----- COLLISION IMPULSE -----
-                double normal_impulse = mass * (1 + restitution) * normal_velocity;
-                double relative_tang_velocity = omega*width/2 + tangential_velocity;
-                double friction_impulse_threshold = relative_tang_velocity / (1.0/mass + (width/2*width/2)/I);
-                double friction_limited_impulse = ground->fc * normal_impulse * dt;
+                // ------------------------------
+                // Case 1: Impulse collision (bouncing phase)
+                // ------------------------------
+                const double eps = 1e-1; // still used for collision threshold
+                if (normal_velocity > eps) {
+                    // Normal impulse
+                    double normal_impulse = mass * (1 + restitution) * normal_velocity;
 
-                double Jt;
-                if (std::abs(friction_impulse_threshold) <= friction_limited_impulse) {
-                    Jt = friction_impulse_threshold; // sticking
-                } else {
-                    Jt = (friction_impulse_threshold > 0 ? 1 : -1) * friction_limited_impulse; // sliding
+                    // Tangential friction impulse
+                    double relative_tang_velocity = omega * (width/2) + tangential_velocity;
+
+                    // Effective mass at contact
+                    double m_eff = (1.0/mass) + ((width/2.0)*(width/2.0))/I;
+                    double friction_impulse_threshold = relative_tang_velocity / m_eff;
+                    double friction_limited_impulse   = ground->fc * normal_impulse;
+
+                    double Jt;
+                    if (std::abs(friction_impulse_threshold) <= friction_limited_impulse) {
+                        Jt = friction_impulse_threshold; // sticking
+                    } else {
+                        Jt = (friction_impulse_threshold > 0 ? 1 : -1) * friction_limited_impulse; // sliding
+                    }
+
+                    // Update angular velocity from collision
+                    omega -= Jt * (width/2.0) / I;
+
+                    // Update tangential velocity from collision
+                    double VtFinal = tangential_velocity - Jt / mass;
+
+                    // Update normal velocity with restitution
+                    double effective_restitution = sqrt(restitution * ground->restitution);
+                    double VnFinal = -effective_restitution * normal_velocity;
+
+                    // Recompose into world space
+                    velocityX = VtFinal * cos(theta) + VnFinal * sin(theta);
+                    velocityY = -VtFinal * sin(theta) + VnFinal * cos(theta);
                 }
 
-                // Update angular velocity from collision
-                omega = omega - Jt * width/2 / I;
+                // ------------------------------
+                // Case 2: Sustained contact (sliding/rolling)
+                // ------------------------------
+                else {
+                    double N = mass * Config::get().gravity;   // normal force
+                    double v_t = tangential_velocity;
 
-                // Update tangential velocity from collision
-                double VtFinal = tangential_velocity - Jt / mass;
+                    // Compute contact point velocity: v_contact = v_t - r * omega
+                    double r = width / 2.0;
+                    double v_contact = v_t - omega * r;
 
-                // Update normal velocity (collision restitution)
-                double effective_restitution = sqrt(restitution * ground->restitution);
-                double VnFinal = -effective_restitution * normal_velocity;
+                    // std::cout << N << " " << v_t << " " <<  v_contact << " " << omega << std::endl;
 
-                // ----- SPIN → HORIZONTAL TRANSFER (BLENDED) -----
-                // double r = width / 2.0;
-                // double v_slip = VtFinal - omega * r;
+                    // Sliding: contact point is moving relative to surface
+                    if (std::abs(v_contact) > 0.5) {
+                        // --- Sliding with kinetic friction ---
+                        // Determine sliding direction
+                        double sliding_dir = (v_t != 0.0) ? (v_t / std::abs(v_t)) : 0.0;
 
-                // // Determine max fraction of spin that can convert per collision
-                // double transfer_fraction = 0.05;  // tweak for golf vs bouncy
-                // double friction_transfer = v_slip * transfer_fraction;
+                        // Friction always opposes center-of-mass motion
+                        double Ff = -ground->mu_k * N * sliding_dir;
+                        double a_t = Ff / mass;
 
-                // // Cap the transfer so it doesn’t fully lock the ball
-                // friction_transfer = std::clamp(friction_transfer, -std::abs(v_slip), std::abs(v_slip));
+                        // Update tangential velocity
+                        v_t += a_t * dt * Config::get().pixelsPerMeter;
 
-                // VtFinal -= friction_transfer;    // reduce slip gradually
-                // omega += friction_transfer / r;  // reduce spin gradually
+                        // Angular velocity update (torque)
+                        omega += (Ff * r / I) * dt;
 
-                // ----- CONTINUOUS ROLLING FRICTION (SMOOTHED) -----
-                // double rollingFactor = rollingFriction * mass * Config::get().gravity * dt;
-                // v_slip = VtFinal - omega * r;
+                    } 
+                    // Rolling: contact point nearly at rest
+                    else {
+                        // Rolling resistance
+                        double torque_rr = -ground->Crr * N * (omega / (std::abs(omega) + 1e-8));
+                        omega += (torque_rr / I) * dt;
 
-                // // scale effect: weak when big slip, strong when close to rolling
-                // double slip_ratio = std::min(1.0, std::abs(v_slip) / (std::abs(VtFinal) + 1e-5));
+                        // Linear velocity follows angular velocity
+                        v_t = omega * r;
 
-                // if (std::abs(v_slip) < 50) {
-                //     double dv = rollingFactor * (v_slip > 0 ? -1 : 1) * slip_ratio;
-                //     VtFinal += dv;            // linear velocity change
-                //     omega  -= dv / r;         // spin reduction
-                // }
+                        // Clamp tiny velocities to stop
+                        if (std::abs(v_t) < 0.5) {
+                            v_t = 0.0;
+                        }
+                        if (std::abs(omega) < 0.01) omega = 0.0;
+                    
+                    }
 
-
-
-                // // --- SPEED-DEPENDENT ROLLING FRICTION (optional damping) ---
-                // double speed = std::abs(VtFinal);
-                // double lowSpeedBoost = 0.05;
-                // double frictionFactor = rollingFriction * (1.0 + lowSpeedBoost / (speed + 0.01));
-                // VtFinal *= std::max(0.0, 1.0 - frictionFactor * dt);
-
-                // --- THRESHOLD STOP ---
-                double minRollVelocity = 5; // pixels/sec threshold to stop
-                if (std::abs(VtFinal) < minRollVelocity) VtFinal = 0.0;
-
-                // Convert back to global velocities
-                velocityX = VtFinal * cos(theta) + VnFinal * sin(theta);
-                velocityY = -VtFinal * sin(theta) + VnFinal * cos(theta);
+                    // Recompose into world space
+                    velocityX = v_t * cos(theta);
+                    velocityY = -v_t * sin(theta);
+                }
             }
-
-
 
     }
 
 
 protected:
-    // void applyGroundFriction(double dt, double frictionDecel) {
-    //     if (velocityX > 0) {
-    //         velocityX -= frictionDecel * dt;
-    //         if (velocityX < 0) velocityX = 0;
-    //     } else if (velocityX < 0) {
-    //         velocityX += frictionDecel * dt;
-    //         if (velocityX > 0) velocityX = 0;
-    //     }
-    // }
-
     void applyWallFriction(double dt) {
         if (velocityY > 0) {
             velocityY -= frictionWall * dt;
