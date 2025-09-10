@@ -1,5 +1,4 @@
-#include "Ball.h"
-#include "Ground.h"
+#include "Body.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "Config.h"
@@ -35,11 +34,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    SDL_Color red = {255, 0, 0, 255};
-    Ball ball(5, 0.045, screen_width*0.10, screen_height*0.9, 0.80, red, 0.75); // start at top middle (dont forget to change back to 0.8)
-
-    Ground* activeGround = new Green();
-
+    Body body;
+    body.fill_children(10000);
+    body.print_childred();
 
     // Check that the window was successfully created
     if (window == NULL) {
@@ -56,19 +53,10 @@ int main(int argc, char* argv[]) {
                 done = true;
             }
             else if (event.type == SDL_EVENT_KEY_DOWN) {
-                switch (event.key.key) {
-                    case SDLK_R: {
-                        ball.x = screen_height/2.0;
-                        ball.y = 0;
-                        ball.resetVelocity();
-                        break;
-                    }    
-                    case SDLK_LEFT:  ball.velocityX -= VELO_CHANGE; break;
-                    case SDLK_RIGHT: ball.velocityX += VELO_CHANGE; break;
-                    case SDLK_W: ball.y += 100; break;
-                    case SDLK_D: ball.w += 10; break;
-                    case SDLK_A: ball.w -= 10; break;
-                }
+                // switch (event.key.key) {
+                //     case SDLK_LEFT:  drop1.Vt -= VELO_CHANGE; break;
+                //     case SDLK_RIGHT:  drop2.Vt += VELO_CHANGE; break;
+                // }
             }
         }
 
@@ -77,11 +65,13 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        // Draw a red circle
-        ball.update(activeGround);
-        ball.render(renderer);
-        activeGround->render(renderer);
 
+        for (auto& child : body.children) {
+            child.update();
+            child.render(renderer);
+        }
+
+        
         SDL_RenderPresent(renderer);
     }
 
