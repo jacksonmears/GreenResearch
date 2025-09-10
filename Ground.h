@@ -4,15 +4,13 @@
 
 class Ground {
 public:
-    double restitution, fc;   // existing: bounciness and friction
-    double mu_k;              // new: kinetic (sliding) friction coefficient
-    double Crr;               // new: rolling resistance coefficient
+    double restitution;   // existing: bounciness and friction
+    double mu_k, mu_r;              // new: kinetic (sliding) friction coefficient
     double y;       
     const double height = 5.0;
     double angle = 0;
-    double roughness; // don't know what the skibidi this is but physics youtuber fella likes it fr
 
-    Ground(double restitution_, double y_, double fc_, double mu_k_ = 0.0, double Crr_ = 0.0) : restitution(restitution_), y(y_), fc(fc_), mu_k(mu_k_), Crr(Crr_) {}
+    Ground(double restitution_, double y_, double mu_k_ = 0.4, double mu_r_ = 0.1) : restitution(restitution_), y(y_), mu_k(mu_k_), mu_r(mu_r_) {}
     virtual ~Ground() = default;
 
     virtual void render(SDL_Renderer* renderer) = 0;
@@ -21,7 +19,7 @@ public:
 // Green ground
 class Green : public Ground {
 public:
-    Green() : Ground(0.2, Config::get().SCREEN_HEIGHT - 5.0, 0.002, 0.002, 0.0001) {} // 5 px from bottom
+    Green() : Ground(0.2, Config::get().SCREEN_HEIGHT - 5.0, 0.6, 0.4) {} // 5 px from bottom
 
     void render(SDL_Renderer* renderer) override {
         SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // green
@@ -35,7 +33,7 @@ public:
 // Fairway ground
 class Fairway : public Ground {
 public:
-    Fairway() : Ground(0.5, Config::get().SCREEN_HEIGHT - 5.0, 0.05, 0.05, 0.0002) {} // same height
+    Fairway() : Ground(0.5, Config::get().SCREEN_HEIGHT - 5.0, 0.8, 0.5) {} // same height
 
     void render(SDL_Renderer* renderer) override {
         SDL_SetRenderDrawColor(renderer, 160, 82, 45, 255); // brownish
@@ -49,7 +47,7 @@ public:
 // Cartpath ground
 class Cartpath : public Ground {
 public:
-    Cartpath() : Ground(0.9, Config::get().SCREEN_HEIGHT - 5.0, 0.001, 0.001, 0.00005) {} // same height dont forget to change back to 0.9
+    Cartpath() : Ground(0.9, Config::get().SCREEN_HEIGHT - 5.0, 0.04, 0.1) {} // same height dont forget to change back to 0.9
 
     void render(SDL_Renderer* renderer) override {
         SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255); // gray

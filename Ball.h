@@ -13,14 +13,14 @@ public:
     double mass, I, x, y, restitution;
     double g = Config::get().gravity * Config::get().pixelsPerMeter;
     double accelerationY = g, accelerationX = 0;
-    double alpha, w = -300; //angular acceleration and angular velocity             
-    double velocityY = 0, velocityX = 0;
-    double mu_b = 0.50, mu_k = 0.4, mu_r = 0.01; // coefficient of friction for ball kinietic friction and rolling resistence
+    double alpha, w = -600; //angular acceleration and angular velocity             
+    double velocityY = 200, velocityX = 1100;
+    double mu_b; // coefficient of friction for ball kinietic friction and rolling resistence
     double slipTolerance = 1e-2;
     SDL_Color color;
 
-    Ball(int radius_, double mass_, double x_, double y_, double restitution_, SDL_Color color_)
-        : radius(radius_), mass(mass_), x(x_), y(y_), restitution(restitution_), color(color_) 
+    Ball(double radius_, double mass_, double x_, double y_, double restitution_, SDL_Color color_, double mu_b_)
+        : radius(radius_), mass(mass_), x(x_), y(y_), restitution(restitution_), color(color_), mu_b(mu_b_)
         {
             double radius_m = radius / Config::get().pixelsPerMeter;
             I = (2.0 / 5.0) * mass * radius_m * radius_m * Config::get().pixelsPerMeter * Config::get().pixelsPerMeter;
@@ -67,12 +67,12 @@ public:
                     double m = mass;
                     int sign;
 
-                    double tr = (2*(velocityX - w*radius)) / (7*mu_k*g); // time to transition
-                    double velocity_rolling_threshold = velocityX - mu_k*g*tr;  // linear velocity at the moment rolling should start
+                    double tr = (2*(velocityX - w*radius)) / (7*ground->mu_k*g); // time to transition
+                    double velocity_rolling_threshold = velocityX - ground->mu_k*g*tr;  // linear velocity at the moment rolling should start
                     double angular_rolling_threshold = velocity_rolling_threshold/radius;  // angular velocity at the moment rolling should start
 
                     if (abs(s) <= slipTolerance) {
-                        double a_rolling = mu_r*g;  // linear acceleration due to rolling resistance
+                        double a_rolling = ground->mu_r*g;  // linear acceleration due to rolling resistance
                         sign = fetchSign(v0); // check if v0 is pos or neg
                         double dv = sign*a_rolling*dt; // linear velocity change as a function of time
                         if (abs(dv) >= abs(v0)) {
@@ -85,9 +85,9 @@ public:
                         // velocityX -= mu_r*g*(dt-tr); // linear velocity while rolling
                     } else {
                         sign = fetchSign(s);
-                        double a_linear = mu_k*g; // linear acceleration defined
+                        double a_linear = ground->mu_k*g; // linear acceleration defined
                         velocityX = v0 - sign * a_linear *dt; // linear velocity as function of time while sliding
-                        alpha = (mu_k*mass*g*radius)/I; // angular acceleration due to friction torque
+                        alpha = (ground->mu_k*mass*g*radius)/I; // angular acceleration due to friction torque
                         w = w0 + sign * alpha *dt; // angular veolocity as function of time
                     }
 

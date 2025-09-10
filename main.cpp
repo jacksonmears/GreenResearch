@@ -36,9 +36,9 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_Color red = {255, 0, 0, 255};
-    Ball ball(5, 0.045, screen_width*0.75, screen_height*0.25, 0.80, red); // start at top middle (dont forget to change back to 0.8)
+    Ball ball(5, 0.045, screen_width*0.10, screen_height*0.9, 0.80, red, 0.75); // start at top middle (dont forget to change back to 0.8)
 
-    Ground* activeGround = new Cartpath();
+    Ground* activeGround = new Green();
 
 
     // Check that the window was successfully created
