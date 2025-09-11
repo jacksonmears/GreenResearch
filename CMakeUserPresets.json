@@ -10,7 +10,9 @@
             "cacheVariables": {
                 "CMAKE_CXX_STANDARD": "20",
                 "SDL3_INCLUDE_DIR": "C:/libs/SDL3/x86_64-w64-mingw32/include",
-                "SDL3_LIBRARY": "C:/libs/SDL3/x86_64-w64-mingw32/lib/libSDL3.dll.a"
+                "SDL3_LIBRARY": "C:/libs/SDL3/x86_64-w64-mingw32/lib/libSDL3.dll.a",
+                "OpenCL_INCLUDE_DIR": "C:/Users/jacks/OpenCL/include",
+                "OpenCL_LIBRARY": "C:/Users/jacks/OpenCL/lib/OpenCL.lib"
             }
         }
     ]

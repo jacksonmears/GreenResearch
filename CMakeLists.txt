@@ -14,5 +14,8 @@ include_directories("C:/libs/SDL3/x86_64-w64-mingw32/include")
 # Tell CMake where to find SDL3 libraries
 link_directories("C:/libs/SDL3/x86_64-w64-mingw32/lib")
 
+include_directories("C:/Users/jacks/OpenCL/include")
+link_directories("C:/Users/jacks/OpenCL/lib")
+
 # Link SDL3 and OpenGL
 target_link_libraries(myMinecraft SDL3 opengl32)
