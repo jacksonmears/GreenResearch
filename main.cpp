@@ -6,12 +6,131 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 
 std::string load_kernel(const char* filename) {
     std::ifstream file(filename);
     return std::string((std::istreambuf_iterator<char>(file)),
                        std::istreambuf_iterator<char>());
 }
+
+
+void drawCircle(SDL_Renderer* renderer, SDL_FPoint center, float radius, SDL_FColor col) {
+    const int steps = 16;
+    for (int i = 0; i < steps; ++i) {
+        float angle = 2.0f * Config::get().PI * i / steps;
+        float x = center.x + radius * cos(angle);
+        float y = center.y + radius * sin(angle);
+        SDL_FRect dot = { x, y, 1.0f, 1.0f };
+        SDL_SetRenderDrawColorFloat(renderer, col.r, col.g, col.b, col.a);
+        SDL_RenderFillRect(renderer, &dot);
+    }
+}
+
+
+float offsetX(const Body& body, int i , int j) {
+    float dx = body.children[i].x - body.children[j].x;
+
+    return dx;
+}
+
+
+float offsetY(const Body& body, int i , int j) {
+    float dy = body.children[i].y - body.children[j].y;
+
+    return dy;
+}
+
+
+float smoothingKernel(float dst) {
+    float radius = Config::get().smoothing_radius;
+    float volume  = Config::get().PI * std::pow(radius, 8) / 4;
+    float value = std::max(0.0f, radius*radius - dst*dst);
+
+    return value * value * value / volume; // divide by volume eventually dumby
+}
+
+float smoothingKernelDerivative(float dst) {
+    float radius = Config::get().smoothing_radius;
+    if (dst >= radius) return 0;
+    float f = radius*radius - dst*dst;
+    float scale = -24 / (Config::get().PI * pow(radius, 8));
+
+    return scale * dst * f * f;
+}
+
+
+std::vector<float> calculateDensities(const Body& body) {
+    size_t N = body.children.size();
+    std::vector<float> densities(N, 0.0f);
+
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = 0; j < N; ++j) if (i != j) {
+            float oY = offsetY(body, i, j), oX = offsetX(body, i, j);
+            float dst = sqrt(oY*oY + oX*oX);
+            float influence = smoothingKernel(dst);
+            densities[i] += Config::get().mass * influence;
+        }
+    }
+
+    return densities;
+}
+
+
+float convertDensityToPressure(float density) {
+
+    float density_error = density - Config::get().target_density;
+    float pressure = density_error * Config::get().pressure_multiplier;
+    return pressure;
+}
+
+
+void calculatePressureForce(const Body& body, const std::vector<float>& densities, std::vector<float>& pressureForceX, std::vector<float>& pressureForceY) {
+    size_t N = body.children.size();
+
+    // Make sure vectors are correctly sized
+    pressureForceX.assign(N, 0.0f);
+    pressureForceY.assign(N, 0.0f);
+
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = 0; j < N; ++j) {
+            if (i == j) continue;
+
+            float oX = offsetX(body, i, j);
+            float oY = offsetY(body, i, j);
+            float dst = std::sqrt(oX*oX + oY*oY);
+
+            // Avoid division by zero
+            float dirX = dst > 0.0f ? oX / dst : 0.0f;
+            float dirY = dst > 0.0f ? oY / dst : 0.0f;
+
+            float slope = smoothingKernelDerivative(dst);
+            float pressure = convertDensityToPressure(densities[j]);
+            float mass = body.children[i].mass;
+            float density = densities[j];
+
+            pressureForceX[i] += pressure * dirX * slope * mass / density;
+            pressureForceY[i] += pressure * dirY * slope * mass / density;
+        }
+    }
+}
+
+
+SDL_FColor interpolateColor(float Vn, float Vt) {
+    float speed = std::sqrt(Vn*Vn + Vt*Vt);
+
+    // choose a max speed where the gradient saturates
+    float maxSpeed = 750.0f;  // completely arbitrary but for the current setup the absolute max a particle has reached is 1000.0f
+    float t = std::clamp(speed / maxSpeed, 0.0f, 1.0f);
+
+    // Smooth gradient from blue → purple → red
+    float r = t;
+    float g = 0.0f;
+    float b = 1.0f - t;
+
+    return {r, g, b, 1.0f}; // SDL_FColor expects floats [0..1]
+}
+
 
 int main() {
     SDL_Init(SDL_INIT_VIDEO);
@@ -20,6 +139,7 @@ int main() {
                                           Config::get().SCREEN_HEIGHT,
                                           SDL_WINDOW_OPENGL);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_ADD);
 
     Body body;
     body.fill_children(Config::get().num_drops); // testing with 1000 drops
@@ -139,6 +259,20 @@ int main() {
         // Read back updated positions
         clEnqueueReadBuffer(queue, x_buf, CL_TRUE, 0, sizeof(float)*N, x.data(), 0, nullptr, nullptr);
         clEnqueueReadBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, Vn_buf, CL_TRUE, 0, sizeof(float)*N, Vn.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, Vt_buf, CL_TRUE, 0, sizeof(float)*N, Vt.data(), 0, nullptr, nullptr);
+
+        std::vector<float> densities = calculateDensities(body);
+
+        float mx = *std::max_element(densities.begin(), densities.end());
+
+        for (auto& p : body.children) {
+            float radius = Config::get().smoothing_radius;
+
+            SDL_FPoint center = {p.x, p.y};
+            SDL_FColor col = {1.0f, 0.0f, 0.0f, 0.2f}; // red aura, semi-transparent
+            drawCircle(renderer, center, radius, col);
+        }
 
         // Update Body objects
         for (size_t i = 0; i < N; ++i) {
@@ -146,7 +280,12 @@ int main() {
             body.children[i].y = y[i];
             body.children[i].Vn = Vn[i];
             body.children[i].Vt = Vt[i];
+            // body.children[i].color = interpolateColor(Vn[i], Vt[i]);
+            float t = densities[i] / mx;
+            body.children[i].color = {t, 0.0f, 1.0f - t, 1.0f};
         }
+
+
 
         // Render
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
