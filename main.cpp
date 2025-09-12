@@ -22,7 +22,7 @@ int main() {
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
 
     Body body;
-    body.fill_children(10'000); // testing with 1000 drops
+    body.fill_children(Config::get().num_drops); // testing with 1000 drops
 
     // --- OpenCL Setup ---
     cl_platform_id platform;
@@ -80,7 +80,7 @@ int main() {
 
     float cell_size = Config::get().cell_size;
     int grid_width_int = static_cast<int>(Config::get().grid_width);
-    int grid_height_int = static_cast<int>(Config::get().grid_width);
+    int grid_height_int = static_cast<int>(Config::get().grid_height);
     float dt = Config::get().deltaTime;
     float g = Config::get().gravity * Config::get().pixelsPerMeter;
     float mu_k = 0.5f;
@@ -92,10 +92,10 @@ int main() {
     clSetKernelArg(build_grid_kernel, 1, sizeof(cl_mem), &y_buf);
     clSetKernelArg(build_grid_kernel, 2, sizeof(float), &cell_size);
     clSetKernelArg(build_grid_kernel, 3, sizeof(int), &grid_width_int);
-    clSetKernelArg(build_grid_kernel, 3, sizeof(int), &grid_height_int);
-    clSetKernelArg(build_grid_kernel, 4, sizeof(int), &N);
-    clSetKernelArg(build_grid_kernel, 5, sizeof(cl_mem), &head_buf);
-    clSetKernelArg(build_grid_kernel, 6, sizeof(cl_mem), &next_buf);
+    clSetKernelArg(build_grid_kernel, 4, sizeof(int), &grid_height_int);
+    clSetKernelArg(build_grid_kernel, 5, sizeof(int), &N);
+    clSetKernelArg(build_grid_kernel, 6, sizeof(cl_mem), &head_buf);
+    clSetKernelArg(build_grid_kernel, 7, sizeof(cl_mem), &next_buf);
 
     // --- Set update_particles kernel args ---
     clSetKernelArg(update_particles_kernel, 0, sizeof(cl_mem), &x_buf);
@@ -121,6 +121,7 @@ int main() {
         SDL_Event event;
         while (SDL_PollEvent(&event))
             if (event.type == SDL_EVENT_QUIT) done = true;
+
 
         // Reset head buffer
         std::fill(head.begin(), head.end(), -1);
