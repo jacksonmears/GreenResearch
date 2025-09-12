@@ -5,6 +5,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 
 std::string load_kernel(const char* filename) {
     std::ifstream file(filename);
@@ -14,25 +15,14 @@ std::string load_kernel(const char* filename) {
 
 int main() {
     SDL_Init(SDL_INIT_VIDEO);
-    SDL_Window* window = SDL_CreateWindow("GPU Drops", Config::get().SCREEN_WIDTH, Config::get().SCREEN_HEIGHT, SDL_WINDOW_OPENGL);
+    SDL_Window* window = SDL_CreateWindow("GPU Drops",
+                                          Config::get().SCREEN_WIDTH,
+                                          Config::get().SCREEN_HEIGHT,
+                                          SDL_WINDOW_OPENGL);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
 
     Body body;
-    body.fill_children(100'000); // tens of thousands of drops
-
-    // --- Create circle texture once ---
-    int diameter = 10;
-    SDL_Texture* circle_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, diameter, diameter);
-    SDL_SetRenderTarget(renderer, circle_texture);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-    SDL_RenderClear(renderer);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-    int r = diameter / 2;
-    for (int w = 0; w < diameter; ++w)
-        for (int h = 0; h < diameter; ++h)
-            if ((w - r)*(w - r) + (h - r)*(h - r) <= r*r)
-                SDL_RenderPoint(renderer, w, h);
-    SDL_SetRenderTarget(renderer, nullptr);
+    body.fill_children(10'000); // testing with 1000 drops
 
     // --- OpenCL Setup ---
     cl_platform_id platform;
@@ -44,12 +34,22 @@ int main() {
     cl_context context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, nullptr);
     cl_command_queue queue = clCreateCommandQueueWithProperties(context, device, 0, nullptr);
 
-    std::string source = load_kernel("drop_kernel.cl");
-    const char* src = source.c_str();
-    size_t src_size = source.size();
+    // --- Load kernels separately ---
+    std::string build_grid_src = load_kernel("build_grid.cl");
+    std::string update_particles_src = load_kernel("update_particles.cl");
+
+    // Concatenate sources into a single program
+    std::string full_source = build_grid_src + "\n" + update_particles_src;
+    const char* src = full_source.c_str();
+    size_t src_size = full_source.size();
+
     cl_program program = clCreateProgramWithSource(context, 1, &src, &src_size, nullptr);
     clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
-    cl_kernel kernel = clCreateKernel(program, "update_drops", nullptr);
+
+    // --- Create kernels ---
+    cl_kernel build_grid_kernel = clCreateKernel(program, "build_grid", nullptr);
+    cl_kernel update_particles_kernel = clCreateKernel(program, "update_particles", nullptr);
+
 
     size_t N = body.children.size();
     std::vector<float> x(N), y(N), Vn(N), Vt(N), R(N), restitution(N);
@@ -62,30 +62,58 @@ int main() {
         restitution[i] = body.children[i].restitution;
     }
 
+    const int num_cells = static_cast<int>(Config::get().num_cells);
+    std::vector<int> head(num_cells, -1);
+    std::vector<int> next(N, -1);
+    std::vector<int> killed(N, 0);
+
+    // --- Buffers ---
     cl_mem x_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, x.data(), nullptr);
     cl_mem y_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, y.data(), nullptr);
     cl_mem Vn_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, Vn.data(), nullptr);
     cl_mem Vt_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, Vt.data(), nullptr);
     cl_mem R_buf = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, R.data(), nullptr);
     cl_mem restitution_buf = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, restitution.data(), nullptr);
+    cl_mem head_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*num_cells, head.data(), nullptr);
+    cl_mem next_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*N, next.data(), nullptr);
+    cl_mem killed_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*N, killed.data(), nullptr);
 
-    float dt = static_cast<float>(Config::get().deltaTime);
-    float g = static_cast<float>(Config::get().gravity * Config::get().pixelsPerMeter);
+    float cell_size = Config::get().cell_size;
+    int grid_width_int = static_cast<int>(Config::get().grid_width);
+    int grid_height_int = static_cast<int>(Config::get().grid_width);
+    float dt = Config::get().deltaTime;
+    float g = Config::get().gravity * Config::get().pixelsPerMeter;
     float mu_k = 0.5f;
-    float screen_width = static_cast<float>(Config::get().SCREEN_WIDTH);
-    float screen_height = static_cast<float>(Config::get().SCREEN_HEIGHT);
+    float screen_width = Config::get().SCREEN_WIDTH;
+    float screen_height = Config::get().SCREEN_HEIGHT;
 
-    clSetKernelArg(kernel, 0, sizeof(cl_mem), &x_buf);
-    clSetKernelArg(kernel, 1, sizeof(cl_mem), &y_buf);
-    clSetKernelArg(kernel, 2, sizeof(cl_mem), &Vn_buf);
-    clSetKernelArg(kernel, 3, sizeof(cl_mem), &Vt_buf);
-    clSetKernelArg(kernel, 4, sizeof(cl_mem), &R_buf);
-    clSetKernelArg(kernel, 5, sizeof(cl_mem), &restitution_buf);
-    clSetKernelArg(kernel, 6, sizeof(float), &dt);
-    clSetKernelArg(kernel, 7, sizeof(float), &g);
-    clSetKernelArg(kernel, 8, sizeof(float), &mu_k);
-    clSetKernelArg(kernel, 9, sizeof(float), &screen_width);
-    clSetKernelArg(kernel, 10, sizeof(float), &screen_height);
+    // --- Set build_grid kernel args ---
+    clSetKernelArg(build_grid_kernel, 0, sizeof(cl_mem), &x_buf);
+    clSetKernelArg(build_grid_kernel, 1, sizeof(cl_mem), &y_buf);
+    clSetKernelArg(build_grid_kernel, 2, sizeof(float), &cell_size);
+    clSetKernelArg(build_grid_kernel, 3, sizeof(int), &grid_width_int);
+    clSetKernelArg(build_grid_kernel, 3, sizeof(int), &grid_height_int);
+    clSetKernelArg(build_grid_kernel, 4, sizeof(int), &N);
+    clSetKernelArg(build_grid_kernel, 5, sizeof(cl_mem), &head_buf);
+    clSetKernelArg(build_grid_kernel, 6, sizeof(cl_mem), &next_buf);
+
+    // --- Set update_particles kernel args ---
+    clSetKernelArg(update_particles_kernel, 0, sizeof(cl_mem), &x_buf);
+    clSetKernelArg(update_particles_kernel, 1, sizeof(cl_mem), &y_buf);
+    clSetKernelArg(update_particles_kernel, 2, sizeof(cl_mem), &Vn_buf);
+    clSetKernelArg(update_particles_kernel, 3, sizeof(cl_mem), &Vt_buf);
+    clSetKernelArg(update_particles_kernel, 4, sizeof(cl_mem), &R_buf);
+    clSetKernelArg(update_particles_kernel, 5, sizeof(float), &dt);
+    clSetKernelArg(update_particles_kernel, 6, sizeof(float), &g);
+    clSetKernelArg(update_particles_kernel, 7, sizeof(float), &screen_width);
+    clSetKernelArg(update_particles_kernel, 8, sizeof(float), &screen_height);
+    clSetKernelArg(update_particles_kernel, 9, sizeof(float), &cell_size);
+    clSetKernelArg(update_particles_kernel, 10, sizeof(int), &grid_width_int);
+    clSetKernelArg(update_particles_kernel, 11, sizeof(int), &grid_height_int);
+    clSetKernelArg(update_particles_kernel, 12, sizeof(int), &N);
+    clSetKernelArg(update_particles_kernel, 13, sizeof(cl_mem), &head_buf);
+    clSetKernelArg(update_particles_kernel, 14, sizeof(cl_mem), &next_buf);
+    clSetKernelArg(update_particles_kernel, 15, sizeof(cl_mem), &killed_buf);
 
     // --- Main loop ---
     bool done = false;
@@ -94,12 +122,20 @@ int main() {
         while (SDL_PollEvent(&event))
             if (event.type == SDL_EVENT_QUIT) done = true;
 
-        // GPU physics update
+        // Reset head buffer
+        std::fill(head.begin(), head.end(), -1);
+        clEnqueueWriteBuffer(queue, head_buf, CL_TRUE, 0, sizeof(int)*num_cells, head.data(), 0, nullptr, nullptr);
+
         size_t global_work_size = N;
-        clEnqueueNDRangeKernel(queue, kernel, 1, nullptr, &global_work_size, nullptr, 0, nullptr, nullptr);
+
+        // 1️⃣ Build the grid
+        clEnqueueNDRangeKernel(queue, build_grid_kernel, 1, nullptr, &global_work_size, nullptr, 0, nullptr, nullptr);
+
+        // 2️⃣ Update particles
+        clEnqueueNDRangeKernel(queue, update_particles_kernel, 1, nullptr, &global_work_size, nullptr, 0, nullptr, nullptr);
         clFinish(queue);
 
-        // Copy back positions for rendering
+        // Read back updated positions
         clEnqueueReadBuffer(queue, x_buf, CL_TRUE, 0, sizeof(float)*N, x.data(), 0, nullptr, nullptr);
         clEnqueueReadBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
 
@@ -119,7 +155,6 @@ int main() {
         SDL_RenderPresent(renderer);
     }
 
-    SDL_DestroyTexture(circle_texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
