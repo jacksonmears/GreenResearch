@@ -74,25 +74,42 @@ float getRandomDir() {
 }
 
 
+float calculateSharedPressure(float densityA, float densityB) {
+    float pressureA = convertDensityToPressure(densityA);
+    float pressureB = convertDensityToPressure(densityB);
+    return (pressureA + pressureB) / 2;
+}
+
+
 void calculatePressureForce(Body& body, int N, std::vector<float>& densities, std::vector<float>& pressureForceX, std::vector<float>& pressureForceY, std::vector<float>& pressureAccelerationX, std::vector<float>& pressureAccelerationY) {
 
     for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) if (i != j) {
-            float oY = offsetY(body, i, j), oX = offsetX(body, i, j);
+        for (int j = i + 1; j < N; ++j) {
+            float oY = -offsetY(body, i, j), oX = -offsetX(body, i, j);
             float dst = sqrt(oY*oY + oX*oX);
             dst = std::fmax(dst, 1e-5);
 
             std::pair<float, float> dir = {oX / dst, oY / dst};
             if (dir.first == 0) dir.first = getRandomDir();
             if (dir.second == 0) dir.second = getRandomDir();
-            float slope = smoothingKernelDerivative(dst);
 
-            float density = densities[i];
+            float slope = smoothingKernelDerivative(dst);
+            float sharedPressure = calculateSharedPressure(densities[i], densities[j]);
             float mass = Config::get().mass;
-            pressureForceX[i] += -convertDensityToPressure(density) * dir.first * slope * mass / density;
-            pressureForceY[i] += -convertDensityToPressure(density) * dir.second * slope * mass / density;
+
+            float Fx = sharedPressure * dir.first * slope * mass;
+            float Fy = sharedPressure * dir.second * slope * mass;
+
+            // Apply equal and opposite forces
+            pressureForceX[i] += Fx / densities[i];
+            pressureForceY[i] += Fy / densities[i];
+            pressureForceX[j] -= Fx / densities[j];
+            pressureForceY[j] -= Fy / densities[j];
+
             pressureAccelerationX[i] = pressureForceX[i] / densities[i];
             pressureAccelerationY[i] = pressureForceY[i] / densities[i];
+            pressureAccelerationX[j] = pressureForceX[j] / densities[j];
+            pressureAccelerationY[j] = pressureForceY[j] / densities[j];
         }
     }
 }
@@ -210,6 +227,11 @@ int main() {
 
 
         // 1️⃣ Calculate densities and pressure forces on CPU
+        std::fill(densities.begin(), densities.end(), 0);
+        std::fill(pressureForceX.begin(), pressureForceX.end(), 0);
+        std::fill(pressureForceY.begin(), pressureForceY.end(), 0);
+        std::fill(pressureAccelerationX.begin(), pressureAccelerationX.end(), 0);
+        std::fill(pressureAccelerationY.begin(), pressureAccelerationY.end(), 0);
         calculateDensities(body, densities, N);
         calculatePressureForce(body, N, densities, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY);
 

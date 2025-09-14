@@ -19,8 +19,8 @@ __kernel void update_particles(
 
 
     // Vn[i] += g * dt;
-    Vn[i] = pressureAccelerationY[i] * dt;
-    Vt[i] = pressureAccelerationX[i] * dt;
+    Vn[i] += pressureAccelerationY[i] * dt;
+    Vt[i] += pressureAccelerationX[i] * dt;
 
     y[i] += Vn[i] * dt;
     x[i] += Vt[i] * dt;
@@ -35,20 +35,20 @@ __kernel void update_particles(
 
     // --- Minimal wall-normal repulsion ---
     if (y[i] < y_min + R) {
-        y[i] = y_min + R;
         Vn[i] *= -collision_damping;
+        y[i] = y_min + R;
     }
     if (y[i] > y_max - R) {
-        y[i] = y_max - R;
         Vn[i] *= -collision_damping;
+        y[i] = y_max - R;
     }
     if (x[i] < x_min + R) {
-        x[i] = x_min + R;
         Vt[i] *= -collision_damping;
+        x[i] = x_min + R;
     }
     if (x[i] > x_max - R) {
-        x[i] = x_max - R;
         Vt[i] *= -collision_damping;
+        x[i] = x_max - R;
     }
 
     // --- Clamp positions to screen bounds ---
