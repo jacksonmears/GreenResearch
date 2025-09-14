@@ -3,44 +3,58 @@ __kernel void update_particles(
     __global float* y,
     __global float* Vn,
     __global float* Vt,
-    __global const float* R,
+    const float R,
     const float dt,
     const float g,
     const float screen_width,
     const float screen_height,
-    const float cell_size,
-    const int grid_width,
-    const int grid_height,
     const int num_particles,
-    __global int* head,
-    __global int* next,
-    __global int* killed
+    const float collision_damping,
+    __global float* pressureForceX, 
+    __global float* pressureForceY,
+    __global float* pressureAccelerationX, 
+    __global float* pressureAccelerationY
 ) {
     int i = get_global_id(0);
 
-    // Apply gravity
-    Vn[i] += g * dt;
 
-    // Update positions
-    x[i] += Vt[i] * dt;
+    // Vn[i] += g * dt;
+    Vn[i] = pressureAccelerationY[i] * dt;
+    Vt[i] = pressureAccelerationX[i] * dt;
+
     y[i] += Vn[i] * dt;
+    x[i] += Vt[i] * dt;
 
-    // Collisions with floor/ceiling
-    float y_max = screen_height - R[i];
-    if (y[i] > y_max) {
-        y[i] = y_max;
-        Vn[i] *= -0.5f; // simple restitution
+
+
+    // --- Wall bounds ---
+    float y_max = screen_height - R;
+    float y_min = R;
+    float x_min = R;
+    float x_max = screen_width - R;
+
+    // --- Minimal wall-normal repulsion ---
+    if (y[i] < y_min + R) {
+        y[i] = y_min + R;
+        Vn[i] *= -collision_damping;
+    }
+    if (y[i] > y_max - R) {
+        y[i] = y_max - R;
+        Vn[i] *= -collision_damping;
+    }
+    if (x[i] < x_min + R) {
+        x[i] = x_min + R;
+        Vt[i] *= -collision_damping;
+    }
+    if (x[i] > x_max - R) {
+        x[i] = x_max - R;
+        Vt[i] *= -collision_damping;
     }
 
-    float y_min = R[i];
-    if (y[i] < y_min) {
-        y[i] = y_min;
-        Vn[i] *= -0.5f;
-    }
+    // --- Clamp positions to screen bounds ---
+    // if (y[i] > y_max) y[i] = y_max;
+    // if (y[i] < y_min) y[i] = y_min;
+    // if (x[i] < x_min) x[i] = x_min;
+    // if (x[i] > x_max) x[i] = x_max;
 
-    // Collisions with walls
-    float x_min = R[i];
-    float x_max = screen_width - R[i];
-    if (x[i] < x_min) { x[i] = x_min; Vt[i] *= -0.5f; }
-    if (x[i] > x_max) { x[i] = x_max; Vt[i] *= -0.5f; }
 }

@@ -1,45 +1,47 @@
 #pragma once
 #include "Config.h"
 #include <SDL3/SDL.h>
+#include <cmath>
 
 class Drop {
 public:
-    float R, x, y, mass, restitution, Vn = 0, Vt;
+    float x, y, Vn, Vt, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY;
     SDL_FColor color;
 
-    Drop(float x_, float y_, float R_, float mass_, float restitution_, SDL_FColor color_)
-        : x(x_), y(y_), R(R_), mass(mass_), restitution(restitution_), color(color_) {}
+    Drop(float x_, float y_, SDL_FColor color_)
+        : x(x_), y(y_), color(color_) {}
 
-    // Render a square using SDL_RenderGeometry
     void render(SDL_Renderer* renderer) {
-        float halfSize = R;
+        const int segments = 12; // more segments = smoother circle
+        float R = Config::get().R;
 
-        SDL_Vertex vertices[4];
+        // +1 for center
+        SDL_Vertex vertices[segments + 1];
 
-        // Top-left
-        vertices[0].position = { x - halfSize, y - halfSize };
+        // Center vertex
+        vertices[0].position = { x, y };
         vertices[0].color = color;
-        vertices[0].tex_coord = { 0.0f, 0.0f };
+        vertices[0].tex_coord = {0.0f, 0.0f};
 
-        // Top-right
-        vertices[1].position = { x + halfSize, y - halfSize };
-        vertices[1].color = color;
-        vertices[1].tex_coord = { 0.0f, 0.0f }; // no texture needed
+        // Perimeter vertices
+        for (int i = 0; i < segments; ++i) {
+            float angle = 2.0f * Config::get().PI * i / segments;
+            float px = x + R * std::cosf(angle);
+            float py = y + R * std::sinf(angle);
+            vertices[i + 1].position = { px, py };
+            vertices[i + 1].color = color;
+            vertices[i + 1].tex_coord = {0.0f, 0.0f};
+        }
 
-        // Bottom-right
-        vertices[2].position = { x + halfSize, y + halfSize };
-        vertices[2].color = color;
-        vertices[2].tex_coord = { 0.0f, 0.0f };
+        // Indices for triangle fan
+        int indices[segments * 3];
+        for (int i = 0; i < segments; ++i) {
+            indices[i * 3 + 0] = 0;             // center
+            indices[i * 3 + 1] = i + 1;         // current perimeter
+            indices[i * 3 + 2] = (i + 1) % segments + 1; // next perimeter
+        }
 
-        // Bottom-left
-        vertices[3].position = { x - halfSize, y + halfSize };
-        vertices[3].color = color;
-        vertices[3].tex_coord = { 0.0f, 0.0f };
-
-        // Two triangles: 0-1-2 and 0-2-3
-        int indices[6] = { 0, 1, 2, 0, 2, 3 };
-
-        // No texture needed, pass nullptr
-        SDL_RenderGeometry(renderer, nullptr, vertices, 4, indices, 6);
+        SDL_RenderGeometry(renderer, nullptr, vertices, segments + 1, indices, segments * 3);
     }
+
 };
