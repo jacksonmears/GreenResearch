@@ -47,7 +47,7 @@ __kernel void calculate_densities(
         int particle_u = cell_particles[start_idx + u];
         if (particle_u == -1) continue;
 
-        float density = 0.0f;
+        float density = 0.00001f;
 
         // Loop over neighbor cells (including this cell)
         for (int n_row = row - 1; n_row <= row + 1; ++n_row) {
@@ -69,5 +69,6 @@ __kernel void calculate_densities(
         }
 
         densities[particle_u] = density > 1e-4 ? density :  1e-4;
+        // printf("density%f", densities[particle_u]);
     }
 }

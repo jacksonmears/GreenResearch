@@ -73,6 +73,14 @@ inline float atomic_xchg_float(__global float* addr, float val) {
     return oldVal.f; // return the old value
 }
 
+inline float getRandomDir(uint seed) {
+    // Linear congruential generator parameters
+    seed = (1103515245 * seed + 12345);
+    float rnd = (float)(seed & 0x00FFFFFF) / 0x01000000; // gives [0,1)
+    return -1.0f + 2.0f * rnd;  // maps to [-1,1)
+}
+
+
 
 
 __kernel void calculate_pressures(
@@ -108,8 +116,6 @@ __kernel void calculate_pressures(
         int particle_u = cell_particles[start_idx + u];
         if (particle_u == -1) continue;
 
-        float density = 0.0f;
-
         // Loop over neighbor cells (including this cell)
         for (int n_row = row - 1; n_row <= row + 1; ++n_row) {
             for (int n_col = col - 1; n_col <= col + 1; ++n_col) {
@@ -124,12 +130,12 @@ __kernel void calculate_pressures(
 
                     float oY = -offsetY(y[particle_u], y[particle_v]), oX = -offsetX(x[particle_u], x[particle_v]);
                     float dst = sqrt(oY*oY + oX*oX);
-                    if (dst == 0) dst = 1e-6;
+                    if (dst < 1e-5) dst = 1e-5;
 
 
                     float2 dir = {oX / dst, oY / dst};
-                    if (dir.x == 0) dir.x = 0.001f;
-                    if (dir.y == 0) dir.y = 0.001f;
+                    // if (dir.x == 0) dir.x = 0.15f;
+                    // if (dir.y == 0) dir.y = 0.15f;
 
                     float slope = smoothingKernelDerivative(dst, smoothing_radius, PI);
                     float sharedPressure = calculateSharedPressure(densities[particle_u], densities[particle_v], target_density, pressureMultiplier);

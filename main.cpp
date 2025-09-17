@@ -208,11 +208,11 @@ int main() {
 
         
         // reset vectors 
-        std::fill(densities.begin(), densities.end(), 0);
+        // std::fill(densities.begin(), densities.end(), 0);
         std::fill(pressureForceX.begin(), pressureForceX.end(), 0);
         std::fill(pressureForceY.begin(), pressureForceY.end(), 0);
-        std::fill(pressureAccelerationX.begin(), pressureAccelerationX.end(), 0);
-        std::fill(pressureAccelerationY.begin(), pressureAccelerationY.end(), 0);
+        // std::fill(pressureAccelerationX.begin(), pressureAccelerationX.end(), 0);
+        // std::fill(pressureAccelerationY.begin(), pressureAccelerationY.end(), 0);
         std::fill(cell_counts.begin(), cell_counts.end(), 0);
         std::fill(cell_particles.begin(), cell_particles.end(), -1);
 
@@ -223,6 +223,8 @@ int main() {
         clEnqueueWriteBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
         clEnqueueWriteBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
         clEnqueueWriteBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(int)*N, pressureForceX.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(int)*N, pressureForceY.data(), 0, nullptr, nullptr);
 
 
         // run first kernel to place particles in cells for more efficient updates
@@ -294,11 +296,11 @@ int main() {
         clEnqueueNDRangeKernel(queue, calculate_densities_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
         clFinish(queue);
 
+        clEnqueueReadBuffer(queue, densities_buf, CL_TRUE, 0, sizeof(float)*N, densities.data(), 0, nullptr, nullptr);
+
         
         clEnqueueNDRangeKernel(queue, calculate_pressures_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
         clFinish(queue);
-
-
 
         clEnqueueReadBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceX.data(), 0, nullptr, nullptr);
         clEnqueueReadBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceY.data(), 0, nullptr, nullptr);
@@ -306,11 +308,11 @@ int main() {
         for (int i = 0; i < N; ++i) {
             pressureAccelerationX[i] = pressureForceX[i] / densities[i];
             pressureAccelerationY[i] = pressureForceY[i] / densities[i];
-            std::cout << pressureForceX[i] << " " << pressureForceY[i] << " " << pressureAccelerationX[i] << " " << pressureAccelerationY[i] << std::endl;
+            // if (i == 0) std::cout << densities[i] << " " << pressureForceX[i] << " " << pressureForceY[i] << " " << pressureAccelerationX[i] << " " << pressureAccelerationY[i] << std::endl;
         }
 
-        clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
-        clEnqueueReadBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
 
         // run last kernel applying new pressure values to particles
         clEnqueueNDRangeKernel(queue, update_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);

@@ -40,7 +40,9 @@ __kernel void update_particles(
     }
     if (y[i] > y_max - R) {
         Vn[i] *= -collision_damping;
-        if (Vn[i] < 1e-2) Vn = 0;
+        // if (Vn[i] < 1e-2) {
+        //     Vt = 0;
+        // }
         y[i] = y_max - R;
     }
     if (x[i] < x_min + R) {
