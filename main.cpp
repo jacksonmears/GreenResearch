@@ -16,105 +16,6 @@ std::string load_kernel(const char* filename) {
 }
 
 
-float offsetX(const Body& body, int i , int j) {
-    float dx = body.children[i].x - body.children[j].x;
-
-    return dx;
-}
-
-
-float offsetY(const Body& body, int i , int j) {
-    float dy = body.children[i].y - body.children[j].y;
-
-    return dy;
-}
-
-
-float smoothingKernel(float dst) {
-    float radius = Config::get().smoothing_radius;
-    if (dst >= radius) return 0;
-
-    float volume  = (Config::get().PI * std::pow(radius, 4)) / 6;
-    return fabs((radius - dst) * (radius - dst) / volume);
-}
-
-float smoothingKernelDerivative(float dst) {
-    float smoothing_radius = Config::get().smoothing_radius;
-    float PI = Config::get().PI;
-
-    if (dst >= smoothing_radius) return 0;
-
-    float scale = -12 / (pow(smoothing_radius, 4) * PI);
-    return (dst - smoothing_radius) * scale; 
-}
-
-
-void calculateDensities(Body& body, std::vector<float>& densities, int N) {
-
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
-            float oY = offsetY(body, i, j), oX = offsetX(body, i, j);
-            float dst = sqrt(oY*oY + oX*oX);
-            float influence = smoothingKernel(dst);
-            densities[i] += Config::get().mass * influence;
-        }
-    }
-}
-
-
-float convertDensityToPressure(float density) {
-    float densityError = density - Config::get().target_density;
-    float pressure = densityError * Config::get().pressureMultiplier;
-    return pressure;
-}
-
-
-float getRandomDir() {
-    return -1.0f + 2.0f * (rand() / (float)RAND_MAX);
-}
-
-
-float calculateSharedPressure(float densityA, float densityB) {
-    float pressureA = convertDensityToPressure(densityA);
-    float pressureB = convertDensityToPressure(densityB);
-    return (pressureA + pressureB) / 2;
-}
-
-
-void calculatePressureForce(Body& body, int N, std::vector<float>& densities, std::vector<float>& pressureForceX, std::vector<float>& pressureForceY, std::vector<float>& pressureAccelerationX, std::vector<float>& pressureAccelerationY) {
-
-    for (int i = 0; i < N; ++i) {
-        for (int j = i + 1; j < N; ++j) {
-            float oY = -offsetY(body, i, j), oX = -offsetX(body, i, j);
-            float dst = sqrt(oY*oY + oX*oX);
-            dst = std::fmax(dst, 1e-5);
-
-            std::pair<float, float> dir = {oX / dst, oY / dst};
-            if (dir.first == 0) dir.first = getRandomDir();
-            if (dir.second == 0) dir.second = getRandomDir();
-
-            float slope = smoothingKernelDerivative(dst);
-            float sharedPressure = calculateSharedPressure(densities[i], densities[j]);
-            float mass = Config::get().mass;
-
-            float Fx = sharedPressure * dir.first * slope * mass;
-            float Fy = sharedPressure * dir.second * slope * mass;
-
-            // Apply equal and opposite forces
-            pressureForceX[i] += Fx / densities[i];
-            pressureForceY[i] += Fy / densities[i];
-            pressureForceX[j] -= Fx / densities[j];
-            pressureForceY[j] -= Fy / densities[j];
-
-            pressureAccelerationX[i] = pressureForceX[i] / densities[i];
-            pressureAccelerationY[i] = pressureForceY[i] / densities[i];
-            pressureAccelerationX[j] = pressureForceX[j] / densities[j];
-            pressureAccelerationY[j] = pressureForceY[j] / densities[j];
-        }
-    }
-}
-
-
 
 
 SDL_FColor interpolateColor(float Vn, float Vt) {
@@ -156,24 +57,65 @@ int main() {
     cl_command_queue queue = clCreateCommandQueueWithProperties(context, device, 0, nullptr);
 
     // --- Load kernels separately ---
+    std::string kernel_functions_src = load_kernel("kernel_functions.cl");
     std::string build_grid_src = load_kernel("build_grid.cl");
     std::string update_particles_src = load_kernel("update_particles.cl");
+    std::string calculate_densities_src = load_kernel("calculate_densities.cl");
+    std::string calculate_pressures_src = load_kernel("calculate_pressures.cl");
 
     // Concatenate sources into a single program
-    std::string full_source = build_grid_src + "\n" + update_particles_src;
+    std::string full_source = kernel_functions_src + "\n" + build_grid_src + "\n" + update_particles_src + "\n" + calculate_densities_src + "\n" + calculate_pressures_src;
     const char* src = full_source.c_str();
     size_t src_size = full_source.size();
 
     cl_program program = clCreateProgramWithSource(context, 1, &src, &src_size, nullptr);
     clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
 
+    cl_int build_status;
+    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_STATUS,
+                        sizeof(build_status), &build_status, nullptr);
+
+    if (build_status != CL_SUCCESS) {
+        size_t log_size = 0;
+        clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG,
+                            0, nullptr, &log_size);
+        std::vector<char> log(log_size);
+        clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG,
+                            log_size, log.data(), nullptr);
+        std::cerr << "Build log:\n" << log.data() << std::endl;
+    }
+
+
     // --- Create kernels ---
     cl_kernel build_grid_kernel = clCreateKernel(program, "build_grid", nullptr);
     cl_kernel update_particles_kernel = clCreateKernel(program, "update_particles", nullptr);
+    cl_kernel calculate_densities_kernel = clCreateKernel(program, "calculate_densities", nullptr);
+    cl_kernel calculate_pressures_kernel = clCreateKernel(program, "calculate_pressures", nullptr);
 
 
     size_t N = body.children.size();
+    float dt = Config::get().deltaTime;
+    float g = Config::get().gravity * Config::get().pixelsPerMeter;
+    float mu_k = 0.5f;
+    float screen_width = Config::get().SCREEN_WIDTH;
+    float screen_height = Config::get().SCREEN_HEIGHT;
+    float R = Config::get().R;
+    float collision_damping = Config::get().collision_damping;
+    float cell_size = Config::get().cell_size;
+    int grid_width = screen_width / cell_size;
+    int grid_height = screen_height / cell_size;
+    int number_of_cells = grid_height * grid_width;
+    size_t number_of_cells_size_t = number_of_cells;
+    int max_particles = Config::get().max_number_particles_per_cell;
+    float smoothing_radius = Config::get().smoothing_radius;
+    float PI = Config::get().PI;
+    float mass = Config::get().mass;
+    float target_density = Config::get().target_density;
+    float pressureMultiplier = Config::get().pressureMultiplier;
+
     std::vector<float> x(N), y(N), Vn(N, 0), Vt(N, 0), pressureForceX(N, 0), pressureForceY(N, 0), pressureAccelerationX(N, 0), pressureAccelerationY(N, 0), densities(N, 0);
+    std::vector<int> cell_particles(number_of_cells * max_particles, -1);
+    std::vector<int> cell_counts(number_of_cells, 0);
     for (size_t i = 0; i < N; ++i) {
         x[i] = body.children[i].x;
         y[i] = body.children[i].y;
@@ -189,14 +131,10 @@ int main() {
     cl_mem pressureForceY_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, pressureForceY.data(), nullptr);
     cl_mem pressureAccelerationX_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, pressureAccelerationX.data(), nullptr);
     cl_mem pressureAccelerationY_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, pressureAccelerationY.data(), nullptr);
+    cl_mem cell_particles_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*number_of_cells*max_particles, cell_particles.data(), nullptr);
+    cl_mem cell_counts_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*number_of_cells, cell_counts.data(), nullptr);
+    cl_mem densities_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, densities.data(), nullptr);
 
-    float dt = Config::get().deltaTime;
-    float g = Config::get().gravity * Config::get().pixelsPerMeter;
-    float mu_k = 0.5f;
-    float screen_width = Config::get().SCREEN_WIDTH;
-    float screen_height = Config::get().SCREEN_HEIGHT;
-    float R = Config::get().R;
-    float collision_damping = Config::get().collision_damping;
 
     // --- Set update_particles kernel args ---
     clSetKernelArg(update_particles_kernel, 0, sizeof(cl_mem), &x_buf);
@@ -216,6 +154,49 @@ int main() {
     clSetKernelArg(update_particles_kernel, 14, sizeof(cl_mem), &pressureAccelerationY_buf);
 
 
+
+    clSetKernelArg(build_grid_kernel, 0, sizeof(cl_mem), &x_buf);
+    clSetKernelArg(build_grid_kernel, 1, sizeof(cl_mem), &y_buf);
+    clSetKernelArg(build_grid_kernel, 2, sizeof(float), &cell_size);
+    clSetKernelArg(build_grid_kernel, 3, sizeof(cl_mem), &cell_particles_buf);
+    clSetKernelArg(build_grid_kernel, 4, sizeof(cl_mem), &cell_counts_buf);
+    clSetKernelArg(build_grid_kernel, 5, sizeof(int), &grid_width);
+    clSetKernelArg(build_grid_kernel, 6, sizeof(int), &grid_height);
+    clSetKernelArg(build_grid_kernel, 7, sizeof(int), &max_particles);
+
+
+
+    clSetKernelArg(calculate_densities_kernel, 0, sizeof(cl_mem), &x_buf);
+    clSetKernelArg(calculate_densities_kernel, 1, sizeof(cl_mem), &y_buf);
+    clSetKernelArg(calculate_densities_kernel, 2, sizeof(cl_mem), &cell_particles_buf);
+    clSetKernelArg(calculate_densities_kernel, 3, sizeof(cl_mem), &cell_counts_buf);
+    clSetKernelArg(calculate_densities_kernel, 4, sizeof(cl_mem), &densities_buf);
+    clSetKernelArg(calculate_densities_kernel, 5, sizeof(int), &max_particles);
+    clSetKernelArg(calculate_densities_kernel, 6, sizeof(int), &grid_width);
+    clSetKernelArg(calculate_densities_kernel, 7, sizeof(int), &grid_height);
+    clSetKernelArg(calculate_densities_kernel, 8, sizeof(float), &smoothing_radius);
+    clSetKernelArg(calculate_densities_kernel, 9, sizeof(float), &PI);
+    clSetKernelArg(calculate_densities_kernel, 10, sizeof(float), &mass);
+
+
+    clSetKernelArg(calculate_pressures_kernel, 0, sizeof(cl_mem), &cell_particles_buf);
+    clSetKernelArg(calculate_pressures_kernel, 1, sizeof(cl_mem), &cell_counts_buf);
+    clSetKernelArg(calculate_pressures_kernel, 2, sizeof(cl_mem), &x_buf);
+    clSetKernelArg(calculate_pressures_kernel, 3, sizeof(cl_mem), &y_buf);
+    clSetKernelArg(calculate_pressures_kernel, 4, sizeof(cl_mem), &densities_buf);
+    clSetKernelArg(calculate_pressures_kernel, 5, sizeof(cl_mem), &pressureForceX_buf);
+    clSetKernelArg(calculate_pressures_kernel, 6, sizeof(cl_mem), &pressureForceY_buf);
+    clSetKernelArg(calculate_pressures_kernel, 7, sizeof(cl_mem), &pressureAccelerationX_buf);
+    clSetKernelArg(calculate_pressures_kernel, 8, sizeof(cl_mem), &pressureAccelerationY_buf);
+    clSetKernelArg(calculate_pressures_kernel, 9, sizeof(float), &target_density);
+    clSetKernelArg(calculate_pressures_kernel, 10, sizeof(float), &pressureMultiplier);
+    clSetKernelArg(calculate_pressures_kernel, 11, sizeof(float), &smoothing_radius);
+    clSetKernelArg(calculate_pressures_kernel, 12, sizeof(float), &PI);
+    clSetKernelArg(calculate_pressures_kernel, 13, sizeof(float), &mass);
+    clSetKernelArg(calculate_pressures_kernel, 14, sizeof(int), &grid_width);
+    clSetKernelArg(calculate_pressures_kernel, 15, sizeof(int), &grid_height);
+    clSetKernelArg(calculate_pressures_kernel, 16, sizeof(int), &max_particles);
+
     // --- Main loop ---
     bool done = false;
     while (!done) {
@@ -224,31 +205,149 @@ int main() {
             if (event.type == SDL_EVENT_QUIT) done = true;
 
 
-
-
-        // 1️⃣ Calculate densities and pressure forces on CPU
+        
+        // reset vectors 
         std::fill(densities.begin(), densities.end(), 0);
         std::fill(pressureForceX.begin(), pressureForceX.end(), 0);
         std::fill(pressureForceY.begin(), pressureForceY.end(), 0);
         std::fill(pressureAccelerationX.begin(), pressureAccelerationX.end(), 0);
         std::fill(pressureAccelerationY.begin(), pressureAccelerationY.end(), 0);
-        calculateDensities(body, densities, N);
-        calculatePressureForce(body, N, densities, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY);
+        std::fill(cell_counts.begin(), cell_counts.end(), 0);
+        std::fill(cell_particles.begin(), cell_particles.end(), -1);
 
-        // 2️⃣ Upload the updated accelerations to the GPU
+
+
+        // read updated values back into GPU
+        clEnqueueWriteBuffer(queue, x_buf, CL_TRUE, 0, sizeof(float)*N, x.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
+
+
+        // run first kernel to place particles in cells for more efficient updates
+        clEnqueueNDRangeKernel(queue, build_grid_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
+
+        // read new particles locations in cells
+        clEnqueueReadBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
+
+
+
+        // run second kernel to calculate densities
+        clEnqueueNDRangeKernel(queue, calculate_densities_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
+
+        // read new density values
+        clEnqueueReadBuffer(queue, densities_buf, CL_TRUE, 0, sizeof(float)*N, densities.data(), 0, nullptr, nullptr);
+
+        
+
+
+
+        // use new density values to find new pressure values
+        // calculatePressureForce(body, N, densities, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY);
+
+
         clEnqueueWriteBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
         clEnqueueWriteBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
 
-        // 3️⃣ Run your kernels (build grid + update particles)
-        clEnqueueNDRangeKernel(queue, build_grid_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
+
+
+        // run last kernel applying new pressure values to particles
         clEnqueueNDRangeKernel(queue, update_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
         clFinish(queue);
 
-        // 4️⃣ Read back positions & velocities (and optionally forces if you need them)
+
+
+        // read new position and velocity values for each particle
+        clEnqueueReadBuffer(queue, x_buf, CL_TRUE, 0, sizeof(float)*N, x.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, Vn_buf, CL_TRUE, 0, sizeof(float)*N, Vn.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, Vt_buf, CL_TRUE, 0, sizeof(float)*N, Vt.data(), 0, nullptr, nullptr);// reset vectors 
+        std::fill(densities.begin(), densities.end(), 0);
+        std::fill(pressureForceX.begin(), pressureForceX.end(), 0);
+        std::fill(pressureForceY.begin(), pressureForceY.end(), 0);
+        std::fill(pressureAccelerationX.begin(), pressureAccelerationX.end(), 0);
+        std::fill(pressureAccelerationY.begin(), pressureAccelerationY.end(), 0);
+        std::fill(cell_counts.begin(), cell_counts.end(), 0);
+        std::fill(cell_particles.begin(), cell_particles.end(), -1);
+
+
+
+        // read updated values back into GPU
+        clEnqueueWriteBuffer(queue, x_buf, CL_TRUE, 0, sizeof(float)*N, x.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
+        clEnqueueWriteBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
+
+
+        // run first kernel to place particles in cells for more efficient updates
+        clEnqueueNDRangeKernel(queue, build_grid_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
+
+        // read new particles locations in cells
+        clEnqueueReadBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
+
+
+
+        // run second kernel to calculate densities
+        clEnqueueNDRangeKernel(queue, calculate_densities_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
+
+        // read new density values
+        // clEnqueueReadBuffer(queue, densities_buf, CL_TRUE, 0, sizeof(float)*N, densities.data(), 0, nullptr, nullptr);
+
+        
+
+
+
+        // use new density values to find new pressure values
+        // calculatePressureForce(body, N, densities, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY);
+
+
+        // for (int i = 0; i < 10; ++i) std::cout << densities[i] << " ";
+        // std::cout << "\n";
+
+        
+        clEnqueueNDRangeKernel(queue, calculate_pressures_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
+
+
+        // clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
+        // clEnqueueReadBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
+
+        // for (int i = 0; i < 10; ++i) std::cout << pressureAccelerationX[i] << " ";
+        // std::cout << "\n";
+
+
+        // clEnqueueWriteBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
+        // clEnqueueWriteBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
+
+
+
+        // run last kernel applying new pressure values to particles
+        clEnqueueNDRangeKernel(queue, update_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
+
+        
+        clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
+
+        for (int i = 0; i < N; ++i) {
+            pressureAccelerationX[i] = pressureForceX[i] / densities[i];
+            pressureAccelerationY[i] = pressureForceY[i] / densities[i];
+        }
+
+
+
+        // read new position and velocity values for each particle
         clEnqueueReadBuffer(queue, x_buf, CL_TRUE, 0, sizeof(float)*N, x.data(), 0, nullptr, nullptr);
         clEnqueueReadBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
         clEnqueueReadBuffer(queue, Vn_buf, CL_TRUE, 0, sizeof(float)*N, Vn.data(), 0, nullptr, nullptr);
         clEnqueueReadBuffer(queue, Vt_buf, CL_TRUE, 0, sizeof(float)*N, Vt.data(), 0, nullptr, nullptr);
+
 
 
 
@@ -261,6 +360,7 @@ int main() {
             particle->y = y[i];
             particle->Vn = Vn[i];
             particle->Vt = Vt[i];
+            // if (cell_particles[i]>0) std::cout << cell_particles[i] << std::endl;  
             // particle->pressureForceX = pressureForceX[i];
             // particle->pressureForceY = pressureForceY[i];
             // particle->pressureAccelerationX = pressureAccelerationX[i];
@@ -277,6 +377,18 @@ int main() {
             child.render(renderer);
         SDL_RenderPresent(renderer);
     }
+
+
+    // for (int i = 0; i < grid_height; ++i) {
+    //     std::cout << i << ": ";
+    //     for (int j = 0; j < grid_width; ++j) {
+    //         int cellindex = i * grid_width + j;
+    //         for (int x = 0; x < max_particles; ++x) {
+    //             std::cout << cell_particles[cellindex * max_particles + x] << " ";
+    //         }std::cout << "    ";
+    //     }std::cout << "\n";
+    // }
+
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

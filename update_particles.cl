@@ -18,7 +18,7 @@ __kernel void update_particles(
     int i = get_global_id(0);
 
 
-    // Vn[i] += g * dt;
+    Vn[i] += g * dt;
     Vn[i] += pressureAccelerationY[i] * dt;
     Vt[i] += pressureAccelerationX[i] * dt;
 
@@ -51,10 +51,7 @@ __kernel void update_particles(
         x[i] = x_max - R;
     }
 
-    // --- Clamp positions to screen bounds ---
-    // if (y[i] > y_max) y[i] = y_max;
-    // if (y[i] < y_min) y[i] = y_min;
-    // if (x[i] < x_min) x[i] = x_min;
-    // if (x[i] > x_max) x[i] = x_max;
+
+
 
 }

@@ -6,6 +6,7 @@
 class Drop {
 public:
     float x, y, Vn, Vt, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY;
+    int cell_number;
     SDL_FColor color;
 
     Drop(float x_, float y_, SDL_FColor color_)

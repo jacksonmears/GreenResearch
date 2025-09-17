@@ -8,12 +8,14 @@ public:
     float deltaTime = 1.0 / 1000;
     float pixelsPerMeter = 100;
     const double PI = 3.141592653589793;
-    const float R = 10;
+    const float R = 5;
     const float mass = 0.005f;
-    const int num_drops = 1500;
+    const int num_drops = 500;
     const float collision_damping = 0.95;
-    const float smoothing_radius = R*3;
+    const float smoothing_radius = R*2;
     const float target_density = 3;
+    const float cell_size = R*2;
+    const int max_number_particles_per_cell = 10;
 
 
     // const float W_self = 6.0f / (PI * R * R);
