@@ -49,29 +49,16 @@ float calculateSharedPressure(
 }
 
 
-inline void atomic_add_float(
-    __global float* addr, 
-    float val
-) {
+inline void atomic_add_float(__global float* addr, float val) {
     union { unsigned int u32; float f; } oldVal, newVal;
     do {
-        oldVal.f = *addr;
+        oldVal.u32 = atomic_cmpxchg((__global unsigned int*)addr, 0, 0); // atomic read
         newVal.f = oldVal.f + val;
     } while (atomic_cmpxchg((__global unsigned int*)addr, oldVal.u32, newVal.u32) != oldVal.u32);
 }
 
 
 
-inline float atomic_xchg_float(__global float* addr, float val) {
-    union { unsigned int u32; float f; } oldVal, newVal;
-    oldVal.f = *addr;
-    newVal.f = val;
-    // Loop until the compare-and-swap succeeds
-    while (atomic_cmpxchg((__global unsigned int*)addr, oldVal.u32, newVal.u32) != oldVal.u32) {
-        oldVal.f = *addr; // reload current value
-    }
-    return oldVal.f; // return the old value
-}
 
 inline float getRandomDir(uint seed) {
     // Linear congruential generator parameters
@@ -79,7 +66,6 @@ inline float getRandomDir(uint seed) {
     float rnd = (float)(seed & 0x00FFFFFF) / 0x01000000; // gives [0,1)
     return -1.0f + 2.0f * rnd;  // maps to [-1,1)
 }
-
 
 
 
@@ -134,8 +120,8 @@ __kernel void calculate_pressures(
 
 
                     float2 dir = {oX / dst, oY / dst};
-                    // if (dir.x == 0) dir.x = 0.15f;
-                    // if (dir.y == 0) dir.y = 0.15f;
+                    if (dir.x == 0) dir.x = 0.01f;
+                    if (dir.y == 0) dir.y = 0.01f;
 
                     float slope = smoothingKernelDerivative(dst, smoothing_radius, PI);
                     float sharedPressure = calculateSharedPressure(densities[particle_u], densities[particle_v], target_density, pressureMultiplier);
@@ -152,11 +138,13 @@ __kernel void calculate_pressures(
                         atomic_add_float(&pressureForceX[particle_v], -Fx / densities[particle_v]);
                         atomic_add_float(&pressureForceY[particle_v], -Fy / densities[particle_v]);
 
+
+
                         // atomic_xchg_float(&pressureAccelerationX[particle_u], pressureForceX[particle_u] / densities[particle_u]);
                         // atomic_xchg_float(&pressureAccelerationY[particle_u], pressureForceY[particle_u] / densities[particle_u]);
                         // atomic_xchg_float(&pressureAccelerationX[particle_v], pressureForceX[particle_v] / densities[particle_v]);
                         // atomic_xchg_float(&pressureAccelerationY[particle_v], pressureForceY[particle_v] / densities[particle_v]);
-                        // printf("i=%d pressureForceX=%f presureForceY=%f\n", cell_id, pressureForceX[particle_u], pressureForceY[particle_u]);
+                        // printf("i=%d Fx=%f Fy=%f density=%f pFx=%f pFy=%f pressureForceX=%f presureAcceleration=%f\n", cell_id, Fx, Fy, densities[particle_u], Fx / densities[particle_u], Fy / densities[particle_u], pressureForceX[particle_u], pressureForceY[particle_u] / densities[particle_u]);
                     }
 
                 }

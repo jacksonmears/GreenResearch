@@ -25,9 +25,12 @@ __kernel void build_grid(
 
     int cellIndex = row * grid_width + col;
 
+
     int slot = atomic_inc(&cell_counts[cellIndex]);
     if (slot < MAX_PER_CELL) {
         cell_particles[cellIndex * MAX_PER_CELL + slot] = i;  // i = particle index
+    } else {
+        atomic_dec(&cell_counts[cellIndex]);
     }
     
     // if (i < 10) printf("x=%f y=%f col=%d row=%d cell_part=%d\n", x[i], y[i], col, row, cell_particles[cellIndex * MAX_PER_CELL + slot]);

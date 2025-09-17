@@ -18,7 +18,7 @@ __kernel void update_particles(
     int i = get_global_id(0);
 
 
-    Vn[i] += g * dt;
+    // Vn[i] += g * dt;
     Vn[i] += pressureAccelerationY[i] * dt;
     Vt[i] += pressureAccelerationX[i] * dt;
 
@@ -33,24 +33,21 @@ __kernel void update_particles(
     float x_min = R;
     float x_max = screen_width - R;
 
-    // --- Minimal wall-normal repulsion ---
+    // --- No collision damping off walls for now
     if (y[i] < y_min + R) {
-        Vn[i] *= -collision_damping;
+        Vn[i] *= -1;
         y[i] = y_min + R;
     }
     if (y[i] > y_max - R) {
-        Vn[i] *= -collision_damping;
-        // if (Vn[i] < 1e-2) {
-        //     Vt = 0;
-        // }
+        Vn[i] *= -0.25;
         y[i] = y_max - R;
     }
     if (x[i] < x_min + R) {
-        Vt[i] *= -collision_damping;
+        Vt[i] *= -1;
         x[i] = x_min + R;
     }
     if (x[i] > x_max - R) {
-        Vt[i] *= -collision_damping;
+        Vt[i] *= -1;
         x[i] = x_max - R;
     }
 

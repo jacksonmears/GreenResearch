@@ -21,6 +21,21 @@ inline float smoothingKernel(
 }
 
 
+// inline float smoothingKernel(
+//     const float dst, 
+//     const float smoothing_radius
+// ) {
+//     if (dst >= 0 && dst <= smoothing_radius) {
+//         float term = (smoothing_radius*smoothing_radius - dst*dst);
+//         float calc = (315.0f / (64.0f * M_PI * pow(smoothing_radius, 9))) * term*term*term;
+//         // printf("calc=%f", calc);
+//         return calc;
+//     }
+//     return 0.0f;
+// }
+
+
+
 __kernel void calculate_densities(
     __global float* x,
     __global float* y,
@@ -32,7 +47,8 @@ __kernel void calculate_densities(
     const int grid_height,
     const float smoothing_radius,
     const float PI,
-    const float mass
+    const float mass,
+    const float target_density
 ) {
     int cell_id = get_global_id(0);
 
@@ -47,7 +63,9 @@ __kernel void calculate_densities(
         int particle_u = cell_particles[start_idx + u];
         if (particle_u == -1) continue;
 
-        float density = 0.00001f;
+        // float min_density = target_density * 3.33e-5 / (smoothing_radius * smoothing_radius);
+        float min_density = 1e-4;
+        float density = min_density; 
 
         // Loop over neighbor cells (including this cell)
         for (int n_row = row - 1; n_row <= row + 1; ++n_row) {
@@ -68,7 +86,8 @@ __kernel void calculate_densities(
             }
         }
 
-        densities[particle_u] = density > 1e-4 ? density :  1e-4;
+        densities[particle_u] = density;
         // printf("density%f", densities[particle_u]);
     }
+
 }
