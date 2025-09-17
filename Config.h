@@ -5,13 +5,13 @@ class Config {
 public:
     float SCREEN_WIDTH = 700, SCREEN_HEIGHT = 500;
     float gravity = 9.81;
-    float deltaTime = 1.0 / 1000;
+    float deltaTime = 1.0 / 5000;
     float pixelsPerMeter = 100;
     const double PI = 3.141592653589793;
     const float R = 5;
     const float mass = 0.005f;
     const int num_drops = 500;
-    const float collision_damping = 0.95;
+    const float collision_damping = 0.50;
     const float smoothing_radius = R*2;
     const float target_density = 3;
     const float cell_size = R*2;

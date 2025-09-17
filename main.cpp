@@ -196,6 +196,7 @@ int main() {
     clSetKernelArg(calculate_pressures_kernel, 14, sizeof(int), &grid_width);
     clSetKernelArg(calculate_pressures_kernel, 15, sizeof(int), &grid_height);
     clSetKernelArg(calculate_pressures_kernel, 16, sizeof(int), &max_particles);
+    clSetKernelArg(calculate_pressures_kernel, 17, sizeof(float), &collision_damping);
 
     // --- Main loop ---
     bool done = false;
@@ -241,13 +242,10 @@ int main() {
         // read new density values
         clEnqueueReadBuffer(queue, densities_buf, CL_TRUE, 0, sizeof(float)*N, densities.data(), 0, nullptr, nullptr);
 
-        
-
-
 
         // use new density values to find new pressure values
-        // calculatePressureForce(body, N, densities, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY);
-
+        clEnqueueNDRangeKernel(queue, calculate_pressures_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
 
         clEnqueueWriteBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
         clEnqueueWriteBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
@@ -296,49 +294,30 @@ int main() {
         clEnqueueNDRangeKernel(queue, calculate_densities_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
         clFinish(queue);
 
-        // read new density values
-        // clEnqueueReadBuffer(queue, densities_buf, CL_TRUE, 0, sizeof(float)*N, densities.data(), 0, nullptr, nullptr);
-
-        
-
-
-
-        // use new density values to find new pressure values
-        // calculatePressureForce(body, N, densities, pressureForceX, pressureForceY, pressureAccelerationX, pressureAccelerationY);
-
-
-        // for (int i = 0; i < 10; ++i) std::cout << densities[i] << " ";
-        // std::cout << "\n";
-
         
         clEnqueueNDRangeKernel(queue, calculate_pressures_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
         clFinish(queue);
 
 
-        // clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
-        // clEnqueueReadBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
 
-        // for (int i = 0; i < 10; ++i) std::cout << pressureAccelerationX[i] << " ";
-        // std::cout << "\n";
+        clEnqueueReadBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceX.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceY.data(), 0, nullptr, nullptr);
 
+        for (int i = 0; i < N; ++i) {
+            pressureAccelerationX[i] = pressureForceX[i] / densities[i];
+            pressureAccelerationY[i] = pressureForceY[i] / densities[i];
+            std::cout << pressureForceX[i] << " " << pressureForceY[i] << " " << pressureAccelerationX[i] << " " << pressureAccelerationY[i] << std::endl;
+        }
 
-        // clEnqueueWriteBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
-        // clEnqueueWriteBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
-
-
+        clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
 
         // run last kernel applying new pressure values to particles
         clEnqueueNDRangeKernel(queue, update_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
         clFinish(queue);
 
         
-        clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
-        clEnqueueReadBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
 
-        for (int i = 0; i < N; ++i) {
-            pressureAccelerationX[i] = pressureForceX[i] / densities[i];
-            pressureAccelerationY[i] = pressureForceY[i] / densities[i];
-        }
 
 
 

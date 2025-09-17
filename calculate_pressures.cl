@@ -92,7 +92,8 @@ __kernel void calculate_pressures(
     const float mass,
     const int grid_width,
     const int grid_height,
-    const int MAX_PARTICLES
+    const int MAX_PARTICLES,
+    const float collision_damping
 ) {
     int cell_id = get_global_id(0);
 
@@ -137,8 +138,8 @@ __kernel void calculate_pressures(
                     float Fy = sharedPressure * dir[1] * slope * mass;
 
                     if (particle_u < particle_v) {
-                        float Fx = sharedPressure * dir.x * slope * mass;
-                        float Fy = sharedPressure * dir.y * slope * mass;
+                        float Fx = sharedPressure * dir.x * slope * mass * collision_damping;
+                        float Fy = sharedPressure * dir.y * slope * mass * collision_damping;
 
                         atomic_add_float(&pressureForceX[particle_u], Fx / densities[particle_u]);
                         atomic_add_float(&pressureForceY[particle_u], Fy / densities[particle_u]);
@@ -149,7 +150,7 @@ __kernel void calculate_pressures(
                         // atomic_xchg_float(&pressureAccelerationY[particle_u], pressureForceY[particle_u] / densities[particle_u]);
                         // atomic_xchg_float(&pressureAccelerationX[particle_v], pressureForceX[particle_v] / densities[particle_v]);
                         // atomic_xchg_float(&pressureAccelerationY[particle_v], pressureForceY[particle_v] / densities[particle_v]);
-                        // printf("i=%d pressureForceX=%f presureForceY=%f pressureAccelerationX=%f presureAccelerationY=%f\n", cell_id, pressureForceX[particle_u], pressureForceY[particle_u], pressureAccelerationX[particle_u], pressureAccelerationY[particle_u]);
+                        // printf("i=%d pressureForceX=%f presureForceY=%f\n", cell_id, pressureForceX[particle_u], pressureForceY[particle_u]);
                     }
 
                 }
