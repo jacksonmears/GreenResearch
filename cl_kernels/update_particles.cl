@@ -1,6 +1,6 @@
 __kernel void update_particles(
-    __global float* x,
-    __global float* y,
+    __global float* xR,
+    __global float* yR,
     __global float* Vn,
     __global float* Vt,
     const float R,
@@ -13,19 +13,16 @@ __kernel void update_particles(
     __global float* pressureForceX, 
     __global float* pressureForceY,
     __global float* pressureAccelerationX, 
-    __global float* pressureAccelerationY
+    __global float* pressureAccelerationY,
+    const float air_damping
 ) {
     int i = get_global_id(0);
 
-
-    // Vn[i] += g * dt;
     Vn[i] += pressureAccelerationY[i] * dt;
     Vt[i] += pressureAccelerationX[i] * dt;
 
-    y[i] += Vn[i] * dt;
-    x[i] += Vt[i] * dt;
-
-
+    yR[i] += Vn[i] * dt * air_damping;
+    xR[i] += Vt[i] * dt * air_damping;
 
     // --- Wall bounds ---
     float y_max = screen_height - R;
@@ -34,21 +31,21 @@ __kernel void update_particles(
     float x_max = screen_width - R;
 
     // --- No collision damping off walls for now
-    if (y[i] < y_min + R) {
+    if (yR[i] < y_min + R) {
         Vn[i] *= -1;
-        y[i] = y_min + R;
+        yR[i] = y_min + R;
     }
-    if (y[i] > y_max - R) {
-        Vn[i] *= -0.25;
-        y[i] = y_max - R;
+    if (yR[i] > y_max - R) {
+        Vn[i] *= -1;
+        yR[i] = y_max - R;
     }
-    if (x[i] < x_min + R) {
+    if (xR[i] < x_min + R) {
         Vt[i] *= -1;
-        x[i] = x_min + R;
+        xR[i] = x_min + R;
     }
-    if (x[i] > x_max - R) {
+    if (xR[i] > x_max - R) {
         Vt[i] *= -1;
-        x[i] = x_max - R;
+        xR[i] = x_max - R;
     }
 
 

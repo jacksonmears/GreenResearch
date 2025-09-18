@@ -59,14 +59,16 @@ int main() {
 
     // --- Load kernels separately ---
     std::string kernel_functions_src = load_kernel("cl_kernels/kernel_functions.cl");
+    std::string update_pred_pos_src = load_kernel("cl_kernels/update_pred_pos.cl");
     std::string build_grid_src = load_kernel("cl_kernels/build_grid.cl");
     std::string update_particles_src = load_kernel("cl_kernels/update_particles.cl");
     std::string calculate_densities_src = load_kernel("cl_kernels/calculate_densities.cl");
     std::string calculate_pressures_src = load_kernel("cl_kernels/calculate_pressures.cl");
     std::string update_pressures_src = load_kernel("cl_kernels/update_pressures.cl");
 
+
     // Concatenate sources into a single program
-    std::string full_source = kernel_functions_src + "\n" + build_grid_src  + "\n" + calculate_densities_src + "\n" + calculate_pressures_src + "\n" + update_pressures_src + "\n" + update_particles_src;
+    std::string full_source = kernel_functions_src + "\n" + update_pred_pos_src + "\n" + build_grid_src  + "\n" + calculate_densities_src + "\n" + calculate_pressures_src + "\n" + update_pressures_src + "\n" + update_particles_src;
     const char* src = full_source.c_str();
     size_t src_size = full_source.size();
 
@@ -89,6 +91,7 @@ int main() {
 
 
     // --- Create kernels ---
+    cl_kernel update_pred_pos_kernel = clCreateKernel(program, "update_pred_pos", nullptr);
     cl_kernel build_grid_kernel = clCreateKernel(program, "build_grid", nullptr);
     cl_kernel calculate_densities_kernel = clCreateKernel(program, "calculate_densities", nullptr);
     cl_kernel calculate_pressures_kernel = clCreateKernel(program, "calculate_pressures", nullptr);
@@ -115,13 +118,14 @@ int main() {
     float mass = Config::get().mass;
     float target_density = Config::get().target_density;
     float pressureMultiplier = Config::get().pressureMultiplier;
+    float air_damping = Config::get().air_damping;
 
-    std::vector<float> x(N), y(N), Vn(N, 0), Vt(N, 0), pressureForceX(N, 0), pressureForceY(N, 0), pressureAccelerationX(N, 0), pressureAccelerationY(N, 0), densities(N, 0);
+    std::vector<float> x(N), y(N), Vn(N, 0), Vt(N, 0), pressureForceX(N, 0), pressureForceY(N, 0), pressureAccelerationX(N, 0), pressureAccelerationY(N, 0), densities(N, 0), xR(N, 0), yR(N, 0);
     std::vector<int> cell_particles(number_of_cells * max_particles, -1);
     std::vector<int> cell_counts(number_of_cells, 0);
     for (size_t i = 0; i < N; ++i) {
-        x[i] = body.children[i].x;
-        y[i] = body.children[i].y;
+        xR[i] = body.children[i].x;
+        yR[i] = body.children[i].y;
     }
 
 
@@ -137,11 +141,13 @@ int main() {
     cl_mem cell_particles_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*number_of_cells*max_particles, cell_particles.data(), nullptr);
     cl_mem cell_counts_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*number_of_cells, cell_counts.data(), nullptr);
     cl_mem densities_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, densities.data(), nullptr);
+    cl_mem xR_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, xR.data(), nullptr);
+    cl_mem yR_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, yR.data(), nullptr);
 
 
     // --- Set update_particles kernel args ---
-    clSetKernelArg(update_particles_kernel, 0, sizeof(cl_mem), &x_buf);
-    clSetKernelArg(update_particles_kernel, 1, sizeof(cl_mem), &y_buf);
+    clSetKernelArg(update_particles_kernel, 0, sizeof(cl_mem), &xR_buf);
+    clSetKernelArg(update_particles_kernel, 1, sizeof(cl_mem), &yR_buf);
     clSetKernelArg(update_particles_kernel, 2, sizeof(cl_mem), &Vn_buf);
     clSetKernelArg(update_particles_kernel, 3, sizeof(cl_mem), &Vt_buf);
     clSetKernelArg(update_particles_kernel, 4, sizeof(float), &R);
@@ -155,6 +161,7 @@ int main() {
     clSetKernelArg(update_particles_kernel, 12, sizeof(cl_mem), &pressureForceY_buf);
     clSetKernelArg(update_particles_kernel, 13, sizeof(cl_mem), &pressureAccelerationX_buf);
     clSetKernelArg(update_particles_kernel, 14, sizeof(cl_mem), &pressureAccelerationY_buf);
+    clSetKernelArg(update_particles_kernel, 15, sizeof(float), &air_damping);
 
 
 
@@ -210,6 +217,17 @@ int main() {
     clSetKernelArg(update_pressures_kernel, 2, sizeof(cl_mem), &densities_buf);
     clSetKernelArg(update_pressures_kernel, 3, sizeof(cl_mem), &pressureAccelerationX_buf);
     clSetKernelArg(update_pressures_kernel, 4, sizeof(cl_mem), &pressureAccelerationY_buf);
+
+
+
+    clSetKernelArg(update_pred_pos_kernel, 0, sizeof(cl_mem), &x_buf);
+    clSetKernelArg(update_pred_pos_kernel, 1, sizeof(cl_mem), &y_buf);
+    clSetKernelArg(update_pred_pos_kernel, 2, sizeof(cl_mem), &xR_buf);
+    clSetKernelArg(update_pred_pos_kernel, 3, sizeof(cl_mem), &yR_buf);
+    clSetKernelArg(update_pred_pos_kernel, 4, sizeof(cl_mem), &Vn_buf);
+    clSetKernelArg(update_pred_pos_kernel, 5, sizeof(cl_mem), &Vt_buf);
+    clSetKernelArg(update_pred_pos_kernel, 6, sizeof(float), &dt);
+    clSetKernelArg(update_pred_pos_kernel, 7, sizeof(float), &g);
     
 
     long long frame_count = 0l, total_fram_count;
@@ -251,6 +269,14 @@ int main() {
         clEnqueueWriteBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
         clEnqueueWriteBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceX.data(), 0, nullptr, nullptr);
         clEnqueueWriteBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceY.data(), 0, nullptr, nullptr);
+
+
+
+        
+        // run kernel to update x and y via predicted positions
+        clEnqueueNDRangeKernel(queue, update_pred_pos_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
+
 
 
         // run first kernel to place particles in cells for more efficient updates
@@ -301,15 +327,15 @@ int main() {
 
 
         // read new position for each particle to render
-        clEnqueueReadBuffer(queue, x_buf, CL_TRUE, 0, sizeof(float)*N, x.data(), 0, nullptr, nullptr);
-        clEnqueueReadBuffer(queue, y_buf, CL_TRUE, 0, sizeof(float)*N, y.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, xR_buf, CL_TRUE, 0, sizeof(float)*N, xR.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, yR_buf, CL_TRUE, 0, sizeof(float)*N, yR.data(), 0, nullptr, nullptr);
 
 
         // Update Body objects
         for (size_t i = 0; i < N; ++i) {
             Drop* particle = &body.children[i];
-            particle->x = x[i];
-            particle->y = y[i];
+            particle->x = xR[i];
+            particle->y = yR[i];
             // particle->Vn = Vn[i];
             // particle->Vt = Vt[i];
         }

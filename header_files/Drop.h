@@ -48,7 +48,7 @@ public:
 
         
 
-        float R = Config::get().R; // half-width of the square
+        float R = Config::get().R/4; // half-width of the square
         SDL_Vertex vertices[4];
 
         // Define corners of the square
