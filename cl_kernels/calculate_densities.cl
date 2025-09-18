@@ -17,7 +17,7 @@ inline float smoothingKernel(
     if (dst > smoothing_radius) return 0;
 
     float volume  = (PI * smoothing_radius * smoothing_radius* smoothing_radius* smoothing_radius) / 6;
-    return fabs((smoothing_radius - dst) * (smoothing_radius - dst) / volume);
+    return (smoothing_radius - dst) * (smoothing_radius - dst) / volume;
 }
 
 

@@ -4,7 +4,7 @@
         {
             "name": "x64-debug-user",
             "displayName": "x64 Debug (User)",
-            "description": "x64 debug build using user SDL3 path",
+            "description": "x64 debug build using user SDL3 and GLEW paths",
             "generator": "MinGW Makefiles",
             "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
@@ -12,7 +12,9 @@
                 "SDL3_INCLUDE_DIR": "C:/libs/SDL3/x86_64-w64-mingw32/include",
                 "SDL3_LIBRARY": "C:/libs/SDL3/x86_64-w64-mingw32/lib/libSDL3.dll.a",
                 "OpenCL_INCLUDE_DIR": "C:/Users/jacks/OpenCL/include",
-                "OpenCL_LIBRARY": "C:/Users/jacks/OpenCL/lib/OpenCL.lib"
+                "OpenCL_LIBRARY": "C:/Users/jacks/OpenCL/lib/OpenCL.lib",
+                "GLEW_INCLUDE_DIR": "D:/Apps/glew-2.1.0/include",
+                "GLEW_LIBRARY": "D:/Apps/glew-2.1.0/lib/Release/x64/glew32s.lib"
             }
         }
     ]

@@ -130,8 +130,8 @@ __kernel void calculate_pressures(
                     float Fy = sharedPressure * dir[1] * slope * mass;
 
                     if (particle_u < particle_v) {
-                        float Fx = sharedPressure * dir.x * slope * mass * collision_damping;
-                        float Fy = sharedPressure * dir.y * slope * mass * collision_damping;
+                        float Fx = -sharedPressure * dir.x * slope * mass * collision_damping;
+                        float Fy = -sharedPressure * dir.y * slope * mass * collision_damping;
 
                         atomic_add_float(&pressureForceX[particle_u], Fx / densities[particle_u]);
                         atomic_add_float(&pressureForceY[particle_u], Fy / densities[particle_u]);

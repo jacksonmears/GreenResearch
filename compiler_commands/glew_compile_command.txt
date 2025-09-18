@@ -1,0 +1,2 @@
+g++ -std=c++20 main.cpp -DSDL_MAIN_HANDLED -IC:/libs/SDL3/x86_64-w64-mingw32/include -IC:/Users/jacks/OpenCL/include -ID:/Apps/glew-2.1.0/include -LC:/libs/SDL3/x86_64-w64-mingw32/lib -LC:/Users/jacks/OpenCL/lib -LD:/Apps/glew-2.1.0/lib/Release/x64 -lglew32 -lSDL3 -lopengl32 -lOpenCL -mconsole -o main.exe
+./main.exe

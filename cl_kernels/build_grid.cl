@@ -18,10 +18,10 @@ __kernel void build_grid(
     row = max(0, min(row, grid_height - 1));
     
     // Clamp to grid
-    if (col < 0) col = 0;
-    if (row < 0) row = 0;
-    if (col >= grid_width) col = grid_width - 1;
-    if (row >= grid_height) row = grid_height - 1;
+    // if (col < 0) col = 0;
+    // if (row < 0) row = 0;
+    // if (col >= grid_width) col = grid_width - 1;
+    // if (row >= grid_height) row = grid_height - 1;
 
     int cellIndex = row * grid_width + col;
 

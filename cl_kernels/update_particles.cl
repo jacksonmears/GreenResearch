@@ -1,3 +1,8 @@
+float dir(float x) {
+    return (x >= 0) - (x < 0);
+}
+
+
 __kernel void update_particles(
     __global float* xR,
     __global float* yR,
@@ -14,9 +19,38 @@ __kernel void update_particles(
     __global float* pressureForceY,
     __global float* pressureAccelerationX, 
     __global float* pressureAccelerationY,
-    const float air_damping
+    const float air_damping,
+    const int leftMouseDown,
+    const int mouseX,
+    const int mouseY,
+    const int N
 ) {
     int i = get_global_id(0);
+
+
+
+
+    if (leftMouseDown) {
+        // std::cout << mouseX << " " << mouseY << std::endl;
+        float radius = 100.0f;   // example radius in screen units
+        float strength = 50.0f; // how hard to push
+
+        for (int i = 0; i < N; i++) {
+            float dx = xR[i] - mouseX;
+            float dy = yR[i] - mouseY;
+            float dist2 = dx*dx + dy*dy;
+
+            if (dist2 < radius*radius && dist2 > 1e-6f) {
+                float dist = sqrt(dist2);
+                float nx = dx / dist; // normalize
+                float ny = dy / dist;
+
+                float force = strength * (1.0f - dist / radius); 
+                Vn[i] += ny * force; 
+                Vt[i] += nx * force;
+            }
+        }
+    }
 
     Vn[i] += pressureAccelerationY[i] * dt;
     Vt[i] += pressureAccelerationX[i] * dt;
@@ -36,15 +70,15 @@ __kernel void update_particles(
         yR[i] = y_min + R;
     }
     if (yR[i] > y_max - R) {
-        Vn[i] *= -1;
+        Vn[i] *= -0.5;
         yR[i] = y_max - R;
     }
     if (xR[i] < x_min + R) {
-        Vt[i] *= -1;
+        Vt[i] *= -0.5;
         xR[i] = x_min + R;
     }
     if (xR[i] > x_max - R) {
-        Vt[i] *= -1;
+        Vt[i] *= -0.5;
         xR[i] = x_max - R;
     }
 

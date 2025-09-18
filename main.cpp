@@ -2,6 +2,7 @@
 #include <CL/cl.h>
 #include "header_files/Body.h"
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_opengl.h>   // SDL’s OpenGL header
 #include <vector>
 #include <fstream>
 #include <iostream>
@@ -13,6 +14,13 @@
 
 
 
+struct GLParticle {
+    float x, y;
+    float r, g, b, a;
+};
+
+
+
 std::string load_kernel(const char* filename) {
     std::ifstream file(filename);
     return std::string((std::istreambuf_iterator<char>(file)),
@@ -20,52 +28,52 @@ std::string load_kernel(const char* filename) {
 }
 
 
-SDL_FColor interpolateColor(float Vn, float Vt) {
-    float speed = std::sqrt(Vn*Vn + Vt*Vt);
+// SDL_FColor interpolateColor(float Vn, float Vt) {
+//     float speed = std::sqrt(Vn*Vn + Vt*Vt);
 
-    // choose a max speed where the gradient saturates
-    float maxSpeed = 2000.0f;
-    float t = std::clamp(speed / maxSpeed, 0.0f, 1.0f);
+//     // choose a max speed where the gradient saturates
+//     float maxSpeed = 2000.0f;
+//     float t = std::clamp(speed / maxSpeed, 0.0f, 1.0f);
 
-    // Define gradient stops (dark blue → red)
-    static const std::array<SDL_FColor, 15> stops = {{
-        {0.0f, 0.0f, 0.2f, 1.0f},  // dark blue
-        {0.0f, 0.0f, 1.0f, 1.0f},  // blue
-        {0.4f, 0.6f, 1.0f, 1.0f},  // light blue
-        {0.4f, 1.0f, 0.6f, 1.0f},  // light green
-        {0.0f, 1.0f, 0.0f, 1.0f},  // green
-        {0.6f, 1.0f, 0.4f, 1.0f},  // light green again
-        {1.0f, 1.0f, 0.4f, 1.0f},  // light yellow
-        {1.0f, 1.0f, 0.0f, 1.0f},  // yellow
-        {0.8f, 0.7f, 0.0f, 1.0f},  // dark yellow
-        {1.0f, 0.6f, 0.2f, 1.0f},  // light orange
-        {1.0f, 0.5f, 0.0f, 1.0f},  // orange
-        {0.8f, 0.3f, 0.0f, 1.0f},  // dark orange
-        {1.0f, 0.3f, 0.3f, 1.0f},  // light red
-        {1.0f, 0.0f, 0.0f, 1.0f},  // red
-        {0.6f, 0.0f, 0.0f, 1.0f}   // dark red
-    }};
+//     // Define gradient stops (dark blue → red)
+//     static const std::array<SDL_FColor, 15> stops = {{
+//         {0.0f, 0.0f, 0.2f, 1.0f},  // dark blue
+//         {0.0f, 0.0f, 1.0f, 1.0f},  // blue
+//         {0.4f, 0.6f, 1.0f, 1.0f},  // light blue
+//         {0.4f, 1.0f, 0.6f, 1.0f},  // light green
+//         {0.0f, 1.0f, 0.0f, 1.0f},  // green
+//         {0.6f, 1.0f, 0.4f, 1.0f},  // light green again
+//         {1.0f, 1.0f, 0.4f, 1.0f},  // light yellow
+//         {1.0f, 1.0f, 0.0f, 1.0f},  // yellow
+//         {0.8f, 0.7f, 0.0f, 1.0f},  // dark yellow
+//         {1.0f, 0.6f, 0.2f, 1.0f},  // light orange
+//         {1.0f, 0.5f, 0.0f, 1.0f},  // orange
+//         {0.8f, 0.3f, 0.0f, 1.0f},  // dark orange
+//         {1.0f, 0.3f, 0.3f, 1.0f},  // light red
+//         {1.0f, 0.0f, 0.0f, 1.0f},  // red
+//         {0.6f, 0.0f, 0.0f, 1.0f}   // dark red
+//     }};
 
-    // Scale t into the range of stops
-    float scaled = t * (stops.size() - 1);
-    int idx = static_cast<int>(scaled);
-    float frac = scaled - idx;
+//     // Scale t into the range of stops
+//     float scaled = t * (stops.size() - 1);
+//     int idx = static_cast<int>(scaled);
+//     float frac = scaled - idx;
 
-    if (idx >= stops.size() - 1)
-        return stops.back();
+//     if (idx >= stops.size() - 1)
+//         return stops.back();
 
-    const auto& c1 = stops[idx];
-    const auto& c2 = stops[idx + 1];
+//     const auto& c1 = stops[idx];
+//     const auto& c2 = stops[idx + 1];
 
-    // Linear interpolation between c1 and c2
-    SDL_FColor result;
-    result.r = c1.r + frac * (c2.r - c1.r);
-    result.g = c1.g + frac * (c2.g - c1.g);
-    result.b = c1.b + frac * (c2.b - c1.b);
-    result.a = 1.0f;
+//     // Linear interpolation between c1 and c2
+//     SDL_FColor result;
+//     result.r = c1.r + frac * (c2.r - c1.r);
+//     result.g = c1.g + frac * (c2.g - c1.g);
+//     result.b = c1.b + frac * (c2.b - c1.b);
+//     result.a = 1.0f;
 
-    return result;
-}
+//     return result;
+// }
 
 
 
@@ -99,10 +107,11 @@ int main() {
     std::string calculate_densities_src = load_kernel("cl_kernels/calculate_densities.cl");
     std::string calculate_pressures_src = load_kernel("cl_kernels/calculate_pressures.cl");
     std::string update_pressures_src = load_kernel("cl_kernels/update_pressures.cl");
+    std::string render_particles_src = load_kernel("cl_kernels/render_particles.cl");
 
 
     // Concatenate sources into a single program
-    std::string full_source = kernel_functions_src + "\n" + update_pred_pos_src + "\n" + build_grid_src  + "\n" + calculate_densities_src + "\n" + calculate_pressures_src + "\n" + update_pressures_src + "\n" + update_particles_src;
+    std::string full_source = kernel_functions_src + "\n" + update_pred_pos_src + "\n" + build_grid_src  + "\n" + calculate_densities_src + "\n" + calculate_pressures_src + "\n" + update_pressures_src + "\n" + update_particles_src + "\n" + render_particles_src;
     const char* src = full_source.c_str();
     size_t src_size = full_source.size();
 
@@ -131,6 +140,11 @@ int main() {
     cl_kernel calculate_pressures_kernel = clCreateKernel(program, "calculate_pressures", nullptr);
     cl_kernel update_pressures_kernel = clCreateKernel(program, "update_pressures", nullptr);
     cl_kernel update_particles_kernel = clCreateKernel(program, "update_particles", nullptr);
+    cl_kernel render_particles_kernel = clCreateKernel(program, "render_particles", nullptr);
+
+
+
+
 
 
     size_t N = body.children.size();
@@ -153,6 +167,8 @@ int main() {
     float target_density = Config::get().target_density;
     float pressureMultiplier = Config::get().pressureMultiplier;
     float air_damping = Config::get().air_damping;
+    int leftMouseDown = 0;
+    int mouseX = 0, mouseY = 0;
 
     std::vector<float> x(N), y(N), Vn(N, 0), Vt(N, 0), pressureForceX(N, 0), pressureForceY(N, 0), pressureAccelerationX(N, 0), pressureAccelerationY(N, 0), densities(N, 0), xR(N, 0), yR(N, 0);
     std::vector<int> cell_particles(number_of_cells * max_particles, -1);
@@ -161,6 +177,7 @@ int main() {
         xR[i] = body.children[i].x;
         yR[i] = body.children[i].y;
     }
+
 
 
     // --- Buffers ---
@@ -196,6 +213,7 @@ int main() {
     clSetKernelArg(update_particles_kernel, 13, sizeof(cl_mem), &pressureAccelerationX_buf);
     clSetKernelArg(update_particles_kernel, 14, sizeof(cl_mem), &pressureAccelerationY_buf);
     clSetKernelArg(update_particles_kernel, 15, sizeof(float), &air_damping);
+    clSetKernelArg(update_particles_kernel, 19, sizeof(int), &N);
 
 
 
@@ -264,17 +282,50 @@ int main() {
     clSetKernelArg(update_pred_pos_kernel, 7, sizeof(float), &g);
     
 
+
+    // clSetKernelArg(render_particles_kernel, 0, sizeof(cl_mem), &xR_buf);
+    // clSetKernelArg(render_particles_kernel, 1, sizeof(cl_mem), &yR_buf);
+    // clSetKernelArg(render_particles_kernel, 2, sizeof(cl_mem), &Vn_buf);
+    // clSetKernelArg(render_particles_kernel, 3, sizeof(cl_mem), &Vt_buf);
+    // clSetKernelArg(render_particles_kernel, 4, sizeof(cl_mem), &particles_buf);
+    // clSetKernelArg(render_particles_kernel, 5, sizeof(int), &N);
+
+
+
+
     long long frame_count = 0l, total_fram_count;
     auto start_time = std::chrono::high_resolution_clock::now();
     auto last_fps_time = start_time;
-
     
     // --- Main loop ---
     bool done = false;
+
     while (!done) {
         SDL_Event event;
-        while (SDL_PollEvent(&event))
-            if (event.type == SDL_EVENT_QUIT) done = true;
+        while (SDL_PollEvent(&event)){
+            if (event.type == SDL_EVENT_QUIT) {
+                done = true;
+            }
+            else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    leftMouseDown = 1;
+                }
+            }
+            else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    leftMouseDown = 0;
+                }
+            }
+            else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                mouseX = event.motion.x;
+                mouseY = event.motion.y;
+            }
+        }
+
+        clSetKernelArg(update_particles_kernel, 16, sizeof(int), &leftMouseDown);
+        clSetKernelArg(update_particles_kernel, 17, sizeof(int), &mouseX);
+        clSetKernelArg(update_particles_kernel, 18, sizeof(int), &mouseY);
+        
 
         ++frame_count;
 
@@ -299,23 +350,21 @@ int main() {
 
 
         // read updated values back into GPU
-        clEnqueueWriteBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
-        clEnqueueWriteBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
-        clEnqueueWriteBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceX.data(), 0, nullptr, nullptr);
-        clEnqueueWriteBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceY.data(), 0, nullptr, nullptr);
-
-
+        // clEnqueueWriteBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
+        // clEnqueueWriteBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
+        // clEnqueueWriteBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceX.data(), 0, nullptr, nullptr);
+        // clEnqueueWriteBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceY.data(), 0, nullptr, nullptr);
 
         
         // run kernel to update x and y via predicted positions
         clEnqueueNDRangeKernel(queue, update_pred_pos_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        clFinish(queue);
+        // clFinish(queue);
 
 
 
         // run first kernel to place particles in cells for more efficient updates
         clEnqueueNDRangeKernel(queue, build_grid_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        clFinish(queue);
+        // clFinish(queue);
 
 
 
@@ -331,12 +380,12 @@ int main() {
 
         // run second kernel to calculate densities
         clEnqueueNDRangeKernel(queue, calculate_densities_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
-        clFinish(queue);
+        // clFinish(queue);
 
 
         
         clEnqueueNDRangeKernel(queue, calculate_pressures_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
-        clFinish(queue);
+        // clFinish(queue);
 
 
 
@@ -345,7 +394,7 @@ int main() {
 
 
         clEnqueueNDRangeKernel(queue, update_pressures_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        clFinish(queue);
+        // clFinish(queue);
 
 
         // clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
@@ -357,7 +406,15 @@ int main() {
 
         // run last kernel applying new pressure values to particles
         clEnqueueNDRangeKernel(queue, update_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        clFinish(queue);
+        // clFinish(queue);
+
+
+        // clEnqueueNDRangeKernel(queue, render_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
+        // clFinish(queue);
+
+        // // Read back just once for rendering
+        // clEnqueueReadBuffer(queue, particles_buf, CL_TRUE, 0, sizeof(GLParticle) * N, gpu_particles.data(), 0, nullptr, nullptr);
+
 
 
         // read new position for each particle to render
@@ -372,7 +429,7 @@ int main() {
             Drop* particle = &body.children[i];
             particle->x = xR[i];
             particle->y = yR[i];
-            particle->color = interpolateColor(Vn[i], Vt[i]);
+            // particle->color = interpolateColor(Vn[i], Vt[i]);
             // particle->Vn = Vn[i];
             // particle->Vt = Vt[i];
         }
