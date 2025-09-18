@@ -14,8 +14,8 @@ __kernel void update_pred_pos(
     
     Vn[i] += g * dt;
 
-    y[i] = yR[i] + Vn[i] * dt;
-    x[i] = xR[i];
+    y[i] = yR[i] + Vn[i] * 1 / 120.0f; //const pred step calculation to keep rendering conistent across different dt configs
+    x[i] = xR[i] + Vt[i] * 1 / 120.0f;
 
     // printf("y=%f",y[i]);
 

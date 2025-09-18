@@ -9,6 +9,9 @@
 #include <cmath>
 #include <numeric>
 #include <chrono>
+#include <array>
+
+
 
 std::string load_kernel(const char* filename) {
     std::ifstream file(filename);
@@ -17,22 +20,53 @@ std::string load_kernel(const char* filename) {
 }
 
 
-
-
 SDL_FColor interpolateColor(float Vn, float Vt) {
     float speed = std::sqrt(Vn*Vn + Vt*Vt);
 
     // choose a max speed where the gradient saturates
-    float maxSpeed = 750.0f;  // completely arbitrary but for the current setup the absolute max a particle has reached is 1000.0f
+    float maxSpeed = 2000.0f;
     float t = std::clamp(speed / maxSpeed, 0.0f, 1.0f);
 
-    // Smooth gradient from blue → purple → red
-    float r = t;
-    float g = 0.0f;
-    float b = 1.0f - t;
+    // Define gradient stops (dark blue → red)
+    static const std::array<SDL_FColor, 15> stops = {{
+        {0.0f, 0.0f, 0.2f, 1.0f},  // dark blue
+        {0.0f, 0.0f, 1.0f, 1.0f},  // blue
+        {0.4f, 0.6f, 1.0f, 1.0f},  // light blue
+        {0.4f, 1.0f, 0.6f, 1.0f},  // light green
+        {0.0f, 1.0f, 0.0f, 1.0f},  // green
+        {0.6f, 1.0f, 0.4f, 1.0f},  // light green again
+        {1.0f, 1.0f, 0.4f, 1.0f},  // light yellow
+        {1.0f, 1.0f, 0.0f, 1.0f},  // yellow
+        {0.8f, 0.7f, 0.0f, 1.0f},  // dark yellow
+        {1.0f, 0.6f, 0.2f, 1.0f},  // light orange
+        {1.0f, 0.5f, 0.0f, 1.0f},  // orange
+        {0.8f, 0.3f, 0.0f, 1.0f},  // dark orange
+        {1.0f, 0.3f, 0.3f, 1.0f},  // light red
+        {1.0f, 0.0f, 0.0f, 1.0f},  // red
+        {0.6f, 0.0f, 0.0f, 1.0f}   // dark red
+    }};
 
-    return {r, g, b, 1.0f}; // SDL_FColor expects floats [0..1]
+    // Scale t into the range of stops
+    float scaled = t * (stops.size() - 1);
+    int idx = static_cast<int>(scaled);
+    float frac = scaled - idx;
+
+    if (idx >= stops.size() - 1)
+        return stops.back();
+
+    const auto& c1 = stops[idx];
+    const auto& c2 = stops[idx + 1];
+
+    // Linear interpolation between c1 and c2
+    SDL_FColor result;
+    result.r = c1.r + frac * (c2.r - c1.r);
+    result.g = c1.g + frac * (c2.g - c1.g);
+    result.b = c1.b + frac * (c2.b - c1.b);
+    result.a = 1.0f;
+
+    return result;
 }
+
 
 
 int main() {
@@ -329,6 +363,8 @@ int main() {
         // read new position for each particle to render
         clEnqueueReadBuffer(queue, xR_buf, CL_TRUE, 0, sizeof(float)*N, xR.data(), 0, nullptr, nullptr);
         clEnqueueReadBuffer(queue, yR_buf, CL_TRUE, 0, sizeof(float)*N, yR.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, Vn_buf, CL_TRUE, 0, sizeof(float)*N, Vn.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, Vt_buf, CL_TRUE, 0, sizeof(float)*N, Vt.data(), 0, nullptr, nullptr);
 
 
         // Update Body objects
@@ -336,6 +372,7 @@ int main() {
             Drop* particle = &body.children[i];
             particle->x = xR[i];
             particle->y = yR[i];
+            particle->color = interpolateColor(Vn[i], Vt[i]);
             // particle->Vn = Vn[i];
             // particle->Vt = Vt[i];
         }
