@@ -139,7 +139,6 @@ __kernel void calculate_pressures(
                         atomic_add_float(&pressureForceY[particle_v], -Fy / densities[particle_v]);
 
 
-
                         // atomic_xchg_float(&pressureAccelerationX[particle_u], pressureForceX[particle_u] / densities[particle_u]);
                         // atomic_xchg_float(&pressureAccelerationY[particle_u], pressureForceY[particle_u] / densities[particle_u]);
                         // atomic_xchg_float(&pressureAccelerationX[particle_v], pressureForceX[particle_v] / densities[particle_v]);

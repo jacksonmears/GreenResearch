@@ -10,7 +10,7 @@ public:
     const double PI = 3.141592653589793;
     const float R = SCREEN_HEIGHT / 400; // used to be 100
     const float mass = 0.005f; // originally 0.005f
-    const int num_drops = 50000;
+    const int num_drops = 40000;
     const float collision_damping = 0.95;
     const float smoothing_radius = R*1.2;
     const float cell_size = smoothing_radius*2;
@@ -24,7 +24,7 @@ public:
 
 
     const float target_density = 0.00015; //orig 1.5 and somewhat average density rn is 0.0003
-    const float pressureMultiplier = 30'000; //0.5, 5, 50, 500'000 it don't matter this thang awesome
+    const float pressureMultiplier = 150'000; //0.5, 5, 50, 500'000 it don't matter this thang awesome
 
 
     // const float W_self = 6.0f / (PI * R * R);

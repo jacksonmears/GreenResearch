@@ -1,6 +1,6 @@
 typedef struct {
-    float2 position;
-    float4 color;
+    float x, y;
+    float r, g, b, a;
 } GLParticle;
 
 typedef float4 Color;
@@ -54,11 +54,20 @@ __kernel void render_particles(
     __global const float* Vn,
     __global const float* Vt,
     __global GLParticle* particles,
-    const int N
+    const int N,
+    const float screen_width,
+    const float screen_height
 ) {
 
     int i = get_global_id(0);
 
-    particles[i].position = (float2)(xR[i], yR[i]);
-    particles[i].color = interpolateColor(Vn[i], Vt[i]);
+    Color c = interpolateColor(Vn[i], Vt[i]);
+
+    particles[i].x = xR[i] / screen_width;
+    particles[i].y = 1.0f - (yR[i] / screen_height);
+    particles[i].r = c[0];
+    particles[i].g = c[1];
+    particles[i].b = c[2];
+    particles[i].a = c[3];
+
 }

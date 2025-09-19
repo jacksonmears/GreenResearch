@@ -1,5 +1,6 @@
 #define CL_TARGET_OPENCL_VERSION 200
 #include <CL/cl.h>
+#include <GL/glew.h>
 #include "header_files/Body.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>   // SDL’s OpenGL header
@@ -28,52 +29,64 @@ std::string load_kernel(const char* filename) {
 }
 
 
-// SDL_FColor interpolateColor(float Vn, float Vt) {
-//     float speed = std::sqrt(Vn*Vn + Vt*Vt);
 
-//     // choose a max speed where the gradient saturates
-//     float maxSpeed = 2000.0f;
-//     float t = std::clamp(speed / maxSpeed, 0.0f, 1.0f);
+const char* vertexShaderSrc = R"(
+#version 330 core
+layout(location = 0) in vec2 inPos;
+layout(location = 1) in vec4 inColor;
+out vec4 fragColor;
+void main() {
+    fragColor = inColor;
+    gl_PointSize = 5.0; // size of particle
+    gl_Position = vec4(inPos * 2.0 - 1.0, 0.0, 1.0); // normalize to [-1,1]
+}
+)";
 
-//     // Define gradient stops (dark blue → red)
-//     static const std::array<SDL_FColor, 15> stops = {{
-//         {0.0f, 0.0f, 0.2f, 1.0f},  // dark blue
-//         {0.0f, 0.0f, 1.0f, 1.0f},  // blue
-//         {0.4f, 0.6f, 1.0f, 1.0f},  // light blue
-//         {0.4f, 1.0f, 0.6f, 1.0f},  // light green
-//         {0.0f, 1.0f, 0.0f, 1.0f},  // green
-//         {0.6f, 1.0f, 0.4f, 1.0f},  // light green again
-//         {1.0f, 1.0f, 0.4f, 1.0f},  // light yellow
-//         {1.0f, 1.0f, 0.0f, 1.0f},  // yellow
-//         {0.8f, 0.7f, 0.0f, 1.0f},  // dark yellow
-//         {1.0f, 0.6f, 0.2f, 1.0f},  // light orange
-//         {1.0f, 0.5f, 0.0f, 1.0f},  // orange
-//         {0.8f, 0.3f, 0.0f, 1.0f},  // dark orange
-//         {1.0f, 0.3f, 0.3f, 1.0f},  // light red
-//         {1.0f, 0.0f, 0.0f, 1.0f},  // red
-//         {0.6f, 0.0f, 0.0f, 1.0f}   // dark red
-//     }};
+const char* fragmentShaderSrc = R"(
+#version 330 core
+in vec4 fragColor;
+out vec4 outColor;
+void main() {
+    outColor = fragColor;
+}
+)";
 
-//     // Scale t into the range of stops
-//     float scaled = t * (stops.size() - 1);
-//     int idx = static_cast<int>(scaled);
-//     float frac = scaled - idx;
 
-//     if (idx >= stops.size() - 1)
-//         return stops.back();
+GLuint compileShader(GLenum type, const char* src) {
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
 
-//     const auto& c1 = stops[idx];
-//     const auto& c2 = stops[idx + 1];
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if(!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+        std::cerr << "Shader compile error: " << infoLog << std::endl;
+    }
+    return shader;
+}
 
-//     // Linear interpolation between c1 and c2
-//     SDL_FColor result;
-//     result.r = c1.r + frac * (c2.r - c1.r);
-//     result.g = c1.g + frac * (c2.g - c1.g);
-//     result.b = c1.b + frac * (c2.b - c1.b);
-//     result.a = 1.0f;
+GLuint createProgram(const char* vsSrc, const char* fsSrc) {
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vsSrc);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsSrc);
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
 
-//     return result;
-// }
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if(!success) {
+        char infoLog[512];
+        glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        std::cerr << "Program link error: " << infoLog << std::endl;
+    }
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    return program;
+}
+
 
 
 
@@ -83,8 +96,16 @@ int main() {
                                           Config::get().SCREEN_WIDTH,
                                           Config::get().SCREEN_HEIGHT,
                                           SDL_WINDOW_OPENGL);
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    // SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
+    // SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+
+    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
+    glewInit(); // initialize GLEW
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 
     Body body;
     body.fill_children(Config::get().num_drops); // testing with 1000 drops
@@ -114,6 +135,8 @@ int main() {
     std::string full_source = kernel_functions_src + "\n" + update_pred_pos_src + "\n" + build_grid_src  + "\n" + calculate_densities_src + "\n" + calculate_pressures_src + "\n" + update_pressures_src + "\n" + update_particles_src + "\n" + render_particles_src;
     const char* src = full_source.c_str();
     size_t src_size = full_source.size();
+
+    GLuint glProgram = createProgram(vertexShaderSrc, fragmentShaderSrc);
 
     cl_program program = clCreateProgramWithSource(context, 1, &src, &src_size, nullptr);
     clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
@@ -145,8 +168,6 @@ int main() {
 
 
 
-
-
     size_t N = body.children.size();
     float dt = Config::get().deltaTime;
     float g = Config::get().gravity * Config::get().pixelsPerMeter;
@@ -173,10 +194,45 @@ int main() {
     std::vector<float> x(N), y(N), Vn(N, 0), Vt(N, 0), pressureForceX(N, 0), pressureForceY(N, 0), pressureAccelerationX(N, 0), pressureAccelerationY(N, 0), densities(N, 0), xR(N, 0), yR(N, 0);
     std::vector<int> cell_particles(number_of_cells * max_particles, -1);
     std::vector<int> cell_counts(number_of_cells, 0);
+    std::vector<GLParticle> gpu_particles(N);
     for (size_t i = 0; i < N; ++i) {
         xR[i] = body.children[i].x;
         yR[i] = body.children[i].y;
     }
+
+
+
+
+
+
+
+
+
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLParticle) * N, nullptr, GL_DYNAMIC_DRAW);
+
+    // position attribute
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(GLParticle), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // color attribute
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(GLParticle), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+
+
+
+
+
+
 
 
 
@@ -194,6 +250,7 @@ int main() {
     cl_mem densities_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, densities.data(), nullptr);
     cl_mem xR_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, xR.data(), nullptr);
     cl_mem yR_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*N, yR.data(), nullptr);
+    cl_mem gpu_particles_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(GLParticle)*N, gpu_particles.data(), nullptr);
 
 
     // --- Set update_particles kernel args ---
@@ -213,7 +270,10 @@ int main() {
     clSetKernelArg(update_particles_kernel, 13, sizeof(cl_mem), &pressureAccelerationX_buf);
     clSetKernelArg(update_particles_kernel, 14, sizeof(cl_mem), &pressureAccelerationY_buf);
     clSetKernelArg(update_particles_kernel, 15, sizeof(float), &air_damping);
-    clSetKernelArg(update_particles_kernel, 19, sizeof(int), &N);
+    clSetKernelArg(update_particles_kernel, 16, sizeof(int), &leftMouseDown);
+    clSetKernelArg(update_particles_kernel, 17, sizeof(int), &mouseX);
+    clSetKernelArg(update_particles_kernel, 18, sizeof(int), &mouseY);
+
 
 
 
@@ -283,17 +343,19 @@ int main() {
     
 
 
-    // clSetKernelArg(render_particles_kernel, 0, sizeof(cl_mem), &xR_buf);
-    // clSetKernelArg(render_particles_kernel, 1, sizeof(cl_mem), &yR_buf);
-    // clSetKernelArg(render_particles_kernel, 2, sizeof(cl_mem), &Vn_buf);
-    // clSetKernelArg(render_particles_kernel, 3, sizeof(cl_mem), &Vt_buf);
-    // clSetKernelArg(render_particles_kernel, 4, sizeof(cl_mem), &particles_buf);
-    // clSetKernelArg(render_particles_kernel, 5, sizeof(int), &N);
+    clSetKernelArg(render_particles_kernel, 0, sizeof(cl_mem), &xR_buf);
+    clSetKernelArg(render_particles_kernel, 1, sizeof(cl_mem), &yR_buf);
+    clSetKernelArg(render_particles_kernel, 2, sizeof(cl_mem), &Vn_buf);
+    clSetKernelArg(render_particles_kernel, 3, sizeof(cl_mem), &Vt_buf);
+    clSetKernelArg(render_particles_kernel, 4, sizeof(cl_mem), &gpu_particles_buf);
+    clSetKernelArg(render_particles_kernel, 5, sizeof(int), &N);
+    clSetKernelArg(render_particles_kernel, 6, sizeof(float), &screen_width);
+    clSetKernelArg(render_particles_kernel, 7, sizeof(float), &screen_height);
 
 
 
 
-    long long frame_count = 0l, total_fram_count;
+    long long frame_count = 0l, total_fram_count = 0l;
     auto start_time = std::chrono::high_resolution_clock::now();
     auto last_fps_time = start_time;
     
@@ -301,6 +363,7 @@ int main() {
     bool done = false;
 
     while (!done) {
+        ++frame_count;
         SDL_Event event;
         while (SDL_PollEvent(&event)){
             if (event.type == SDL_EVENT_QUIT) {
@@ -327,112 +390,58 @@ int main() {
         clSetKernelArg(update_particles_kernel, 18, sizeof(int), &mouseY);
         
 
-        ++frame_count;
-
-
-        // std::fill(pressureForceX.begin(), pressureForceX.end(), 0);
-        // std::fill(pressureForceY.begin(), pressureForceY.end(), 0);
-        // std::fill(cell_counts.begin(), cell_counts.end(), 0);
-        // std::fill(cell_particles.begin(), cell_particles.end(), -1);
-
 
         float zero_float = 0.0f;
         int zero_int = 0;
         int minus_one = -1;
 
-        // Fill float buffers
         clEnqueueFillBuffer(queue, pressureForceX_buf, &zero_float, sizeof(float), 0, sizeof(float) * N, 0, nullptr, nullptr);
         clEnqueueFillBuffer(queue, pressureForceY_buf, &zero_float, sizeof(float), 0, sizeof(float) * N, 0, nullptr, nullptr);
 
-        // Fill int buffers
         clEnqueueFillBuffer(queue, cell_counts_buf, &zero_int, sizeof(int), 0, sizeof(int) * number_of_cells, 0, nullptr, nullptr);
         clEnqueueFillBuffer(queue, cell_particles_buf, &minus_one, sizeof(int), 0, sizeof(int) * max_particles * number_of_cells, 0, nullptr, nullptr);
 
 
-        // read updated values back into GPU
-        // clEnqueueWriteBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
-        // clEnqueueWriteBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
-        // clEnqueueWriteBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceX.data(), 0, nullptr, nullptr);
-        // clEnqueueWriteBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceY.data(), 0, nullptr, nullptr);
 
-        
-        // run kernel to update x and y via predicted positions
+
+
         clEnqueueNDRangeKernel(queue, update_pred_pos_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        // clFinish(queue);
 
 
-
-        // run first kernel to place particles in cells for more efficient updates
         clEnqueueNDRangeKernel(queue, build_grid_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        // clFinish(queue);
 
 
-
-        // // read new particles locations in cells
-        // clEnqueueReadBuffer(queue, cell_particles_buf, CL_TRUE, 0, sizeof(int)*max_particles * number_of_cells, cell_particles.data(), 0, nullptr, nullptr);
-        // clEnqueueReadBuffer(queue, cell_counts_buf, CL_TRUE, 0, sizeof(int)*number_of_cells, cell_counts.data(), 0, nullptr, nullptr);
-        
-        // for (int i = 0; i < cell_counts[0]; ++i) {
-        //     std::cout << cell_particles[i] << " ";
-        // } if (cell_counts[0]) std::cout << "\n";
-
-
-
-        // run second kernel to calculate densities
         clEnqueueNDRangeKernel(queue, calculate_densities_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
-        // clFinish(queue);
-
 
         
         clEnqueueNDRangeKernel(queue, calculate_pressures_kernel, 1, nullptr, &number_of_cells_size_t, nullptr, 0, nullptr, nullptr);
-        // clFinish(queue);
-
-
-
-        // clEnqueueReadBuffer(queue, pressureForceX_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceX.data(), 0, nullptr, nullptr);
-        // clEnqueueReadBuffer(queue, pressureForceY_buf, CL_TRUE, 0, sizeof(float)*N, pressureForceY.data(), 0, nullptr, nullptr);
 
 
         clEnqueueNDRangeKernel(queue, update_pressures_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        // clFinish(queue);
 
 
-        // clEnqueueReadBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
-        // mx = std::max(mx, *std::max_element(pressureAccelerationX.begin(), pressureAccelerationX.end()));
-        // mn = std::min(mn, *std::min_element(pressureAccelerationX.begin(), pressureAccelerationX.end()));
-
-        // clEnqueueWriteBuffer(queue, pressureAccelerationX_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationX.data(), 0, nullptr, nullptr);
-        // clEnqueueWriteBuffer(queue, pressureAccelerationY_buf, CL_TRUE, 0, sizeof(float)*N, pressureAccelerationY.data(), 0, nullptr, nullptr);
-
-        // run last kernel applying new pressure values to particles
         clEnqueueNDRangeKernel(queue, update_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        // clFinish(queue);
 
+        clEnqueueNDRangeKernel(queue, render_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
+        clFinish(queue);
 
-        // clEnqueueNDRangeKernel(queue, render_particles_kernel, 1, nullptr, &N, nullptr, 0, nullptr, nullptr);
-        // clFinish(queue);
+        clEnqueueReadBuffer(queue, gpu_particles_buf, CL_TRUE, 0, sizeof(GLParticle)*N, gpu_particles.data(), 0, nullptr, nullptr);
+
 
         // // Read back just once for rendering
-        // clEnqueueReadBuffer(queue, particles_buf, CL_TRUE, 0, sizeof(GLParticle) * N, gpu_particles.data(), 0, nullptr, nullptr);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLParticle)*N, gpu_particles.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 
+        // --- DRAW ---
+        glClearColor(0,0,0,1);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glUseProgram(glProgram);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_POINTS, 0, N);
+        SDL_GL_SwapWindow(window);
 
-        // read new position for each particle to render
-        clEnqueueReadBuffer(queue, xR_buf, CL_TRUE, 0, sizeof(float)*N, xR.data(), 0, nullptr, nullptr);
-        clEnqueueReadBuffer(queue, yR_buf, CL_TRUE, 0, sizeof(float)*N, yR.data(), 0, nullptr, nullptr);
-        clEnqueueReadBuffer(queue, Vn_buf, CL_TRUE, 0, sizeof(float)*N, Vn.data(), 0, nullptr, nullptr);
-        clEnqueueReadBuffer(queue, Vt_buf, CL_TRUE, 0, sizeof(float)*N, Vt.data(), 0, nullptr, nullptr);
-
-
-        // Update Body objects
-        for (size_t i = 0; i < N; ++i) {
-            Drop* particle = &body.children[i];
-            particle->x = xR[i];
-            particle->y = yR[i];
-            // particle->color = interpolateColor(Vn[i], Vt[i]);
-            // particle->Vn = Vn[i];
-            // particle->Vt = Vt[i];
-        }
 
         auto now = std::chrono::high_resolution_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fps_time).count();
@@ -445,12 +454,6 @@ int main() {
             last_fps_time = now;
         }
 
-        // Render
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
-        for (auto& child : body.children)
-            child.render(renderer);
-        SDL_RenderPresent(renderer);
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -459,7 +462,7 @@ int main() {
     std::cout << "average FPS: " << average_fps << std::endl;
 
 
-    SDL_DestroyRenderer(renderer);
+    // SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;

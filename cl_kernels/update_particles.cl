@@ -13,7 +13,7 @@ __kernel void update_particles(
     const float g,
     const float screen_width,
     const float screen_height,
-    const int num_particles,
+    const int N,
     const float collision_damping,
     __global float* pressureForceX, 
     __global float* pressureForceY,
@@ -22,18 +22,15 @@ __kernel void update_particles(
     const float air_damping,
     const int leftMouseDown,
     const int mouseX,
-    const int mouseY,
-    const int N
+    const int mouseY
 ) {
     int i = get_global_id(0);
 
 
-
-
     if (leftMouseDown) {
         // std::cout << mouseX << " " << mouseY << std::endl;
-        float radius = 100.0f;   // example radius in screen units
-        float strength = 50.0f; // how hard to push
+        float radius = 10.0f;   // example radius in screen units
+        float strength = 1.0f; // how hard to push
 
         for (int i = 0; i < N; i++) {
             float dx = xR[i] - mouseX;
