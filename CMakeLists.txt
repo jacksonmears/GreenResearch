@@ -4,7 +4,7 @@ project(myMinecraft)
 set(CMAKE_CXX_STANDARD 20)
 
 # Add all source files (main.cpp and Ball.cpp)
-add_executable(myMinecraft
+add_executable(GreenResearch
     main.cpp
 )
 
@@ -20,5 +20,5 @@ include_directories("D:/Apps/glew-2.1.0/include")
 link_directories("D:/Apps/glew-2.1.0/lib/Release/x64")
 
 # Link SDL3 and OpenGL
-target_link_libraries(myMinecraft GLEW SDL3 opengl32)
+target_link_libraries(GreenResearch GLEW SDL3 opengl32)
 
