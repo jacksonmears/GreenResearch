@@ -8,7 +8,7 @@ public:
     float deltaTime = 1.0 / 2000;
     float pixelsPerMeter = 100;
     const double PI = 3.141592653589793;
-    const float R = SCREEN_HEIGHT / 400; // used to be 100
+    const float R = 2.0; // used to be 100
     const float mass = 0.005f; // originally 0.005f
     const int num_drops = 40000;
     const float collision_damping = 0.95;
