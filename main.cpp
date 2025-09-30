@@ -7,8 +7,11 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 #include <random>
 #include <chrono>
+#include "headers/Config.h"
+#include "headers/fetch_grid.h"
 
 // Window settings
 const int SCREEN_WIDTH = 800;
@@ -22,20 +25,39 @@ float rotY = 30.0f;
 struct Particle {
     float x, y, z;
     float r, g, b;
+    size_t grid_index;
 };
 
-// Generate N random particles
-// std::vector<Particle> generateParticles(int N) {
-//     std::vector<Particle> particles;
-//     std::mt19937 rng((unsigned int)std::chrono::high_resolution_clock::now().time_since_epoch().count());
-//     std::uniform_real_distribution<float> pos(-2.0f, 2.0f);
-//     std::uniform_real_distribution<float> color(0.2f, 1.0f);
 
-//     for(int i = 0; i < N; ++i) {
-//         particles.push_back({ pos(rng), pos(rng), pos(rng), color(rng), color(rng), color(rng) });
-//     }
-//     return particles;
-// }
+inline std::tuple<float, float, float> hashToColor(uint64_t h) {
+    // scramble bits
+    h ^= (h >> 23);
+    h *= 0x2127599bf4325c37ULL;
+    h ^= (h >> 47);
+
+    // extract bytes
+    uint8_t r = (h >>  0) & 0xFF;
+    uint8_t g = (h >>  8) & 0xFF;
+    uint8_t b = (h >> 16) & 0xFF;
+
+    // normalize to [0,1] for OpenGL / shaders
+    return { r/255.0f, g/255.0f, b/255.0f };
+}
+
+
+void revertMovement(auto it) {
+    for (Particle* p : it->second) {
+        p->y -= 1.0f;
+    }
+}
+
+
+void updateMovement(auto it) {
+    for (Particle* p : it->second) {
+        p->y += 1.0f;
+    }
+}
+
 
 int main(int argc, char** argv) {
     
@@ -46,17 +68,35 @@ int main(int argc, char** argv) {
     }
 
     std::vector<Particle> particles;
+    particles.reserve(1'500'000); // withouth this the particles vector is reblocked and pointers created in cellMap are invalid. a very awesome real life case of the reappointing of capacity and the real dangers of pointers and their safety!
     std::string line;
+    float grid_resolution = Config::get().grid_resolution;
+    std::unordered_map<size_t, std::vector<Particle*>> cellMap;
 
     while (std::getline(file, line)) {
         std::istringstream iss(line);
         float x, y, z;
+
         if (iss >> x >> y >> z) {
-            particles.emplace_back(x,y,z, 1,1,1);
+            size_t cell = fetch_cell(x, z);
+            auto [r,g,b] = hashToColor(cell);
+            particles.emplace_back(x,y,z, r,g,b, cell);
+            cellMap[cell].push_back(&particles.back());
         }
         // optionally handle lines that don't have 3 floats
     }
 
+    // auto it = cellMap.begin();
+    // while (it != cellMap.end()) {
+    //     std::cout << it->second.size() << "\n";
+    //     it++;
+    // }
+
+    // for (int i = 0; i < particles.size(); ++i) {
+    //     if (i%10000 == 0) {
+    //         std::cout << particles[i].grid_index << "\n";
+    //     }
+    // }
 
     SDL_Window* window = SDL_CreateWindow("3D Particles",
         SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_OPENGL);
@@ -77,6 +117,11 @@ int main(int argc, char** argv) {
     int lastMouseX = 0, lastMouseY = 0;
     float cameraDistance = 5.0f;
 
+
+
+
+    auto it = cellMap.begin();
+    updateMovement(it);
 
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -144,6 +189,21 @@ int main(int argc, char** argv) {
         auto fpsNow = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(fpsNow - fpsLast).count();
         if (ms >= 1000) {
+            if (it != cellMap.end()) {
+                revertMovement(it);
+            }
+
+            // move iterator to next cell
+            ++it;
+            if (it == cellMap.end()) {
+                it = cellMap.begin(); // loop back to first cell
+            }
+
+            // update the new current cell
+            if (it != cellMap.end()) {
+                updateMovement(it);
+            }
+
             std::cout << "FPS: " << frames << std::endl;
             frames = 0;
             fpsLast = fpsNow;
