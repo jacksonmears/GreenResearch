@@ -12,6 +12,7 @@
 #include <chrono>
 #include "headers/Config.h"
 #include "headers/fetch_grid.h"
+#include "headers/calculate_slopes.h"
 
 // Window settings
 const int SCREEN_WIDTH = 800;
@@ -20,13 +21,6 @@ const int SCREEN_HEIGHT = 600;
 // Rotation angles
 float rotX = 20.0f;
 float rotY = 30.0f;
-
-// Particle structure
-struct Particle {
-    float x, y, z;
-    float r, g, b;
-    size_t grid_index;
-};
 
 
 // inline std::tuple<float, float, float> hashToColor(uint64_t h) {
@@ -82,14 +76,14 @@ void updateMovement(std::vector<Particle*>& particles, bool middle) {
 
 int main(int argc, char** argv) {
     
-    std::ifstream file("point_clouds/backyard_space.xyz"); // your file
+    std::ifstream file("point_clouds/uphill_space.xyz"); 
     if (!file.is_open()) {
         std::cerr << "Failed to open file\n";
         return 1;
     }
 
     std::vector<Particle> particles;
-    particles.reserve(1'500'000); // withouth this the particles vector is reblocked and pointers created in cellMap are invalid. a very awesome real life case of the reappointing of capacity and the real dangers of pointers and their safety!
+    particles.reserve(5'000'000); // withouth this the particles vector is reblocked and pointers created in cellMap are invalid. a very awesome real life case of the reappointing of capacity and the real dangers of pointers and their safety!
     std::string line;
     float grid_resolution = Config::get().grid_resolution;
     std::unordered_map<size_t, std::vector<Particle*>> cellMap;
@@ -105,6 +99,12 @@ int main(int argc, char** argv) {
             cellMap[cell].push_back(&particles.back());
         }
         // optionally handle lines that don't have 3 floats
+    }
+
+    std::vector<SlopeResult> planes;
+    planes.reserve(cellMap.size()+1);
+    for (auto [key, value] : cellMap) {
+        planes.emplace_back(fitPlane(value));
     }
 
     // auto it = cellMap.begin();
@@ -203,6 +203,83 @@ int main(int argc, char** argv) {
         }
         glEnd();
 
+
+        //straight lines from slope perpendicular to surface. still a very good visualization
+        // glLineWidth(2.0f);
+        // glBegin(GL_LINES);
+        // for (SlopeResult& plane : planes) {
+        //     if (!plane.valid) continue;
+        //     float slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
+        //     std::cout << "Cell centroid (" << plane.cx << ", " << plane.cy << ", " << plane.cz << ") "
+        //             << "Slope: " << slopePercent << "%\n";
+
+        //     float scale = 0.5f; // length of normal
+        //     glColor3f(1.0f, 0.0f, 0.0f);
+
+        //     glVertex3f(plane.cx, plane.cy, plane.cz); // start at centroid
+        //     glVertex3f(plane.cx + plane.nx*scale,
+        //             plane.cy + plane.ny*scale,
+        //             plane.cz + plane.nz*scale); // tip of normal
+        // }
+        // glEnd();
+
+        glLineWidth(2.0f);
+        glBegin(GL_LINES);
+        for (SlopeResult& plane : planes) {
+            if (!plane.valid) continue;
+
+            // compute downhill direction
+            float dx = -plane.a;
+            float dz = -plane.b;
+            float len = std::sqrt(dx*dx + dz*dz);
+            if (len < 1e-6f) continue; // flat cell, skip
+
+            dx /= len; 
+            dz /= len;
+
+            float scale = 0.5f; // arrow length
+            float startX = plane.cx;
+            float startY = plane.cy;
+            float startZ = plane.cz;
+            float endX = startX + dx * scale;
+            float endY = startY; // keep it parallel to the surface
+            float endZ = startZ + dz * scale;
+
+            // color by slope magnitude
+            float slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
+            float color = std::min(slopePercent/100.0f, 1.0f);
+            glColor3f(color, 0.0f, 1.0f - color);
+
+            float yOffset = 0.25f;
+            // draw line segment
+            glVertex3f(startX, startY + yOffset, startZ);
+            glVertex3f(endX, endY + yOffset, endZ);
+
+            // optional: small arrowhead (two small lines)
+            float arrowSize = 0.1f * scale;
+            glVertex3f(endX, endY + yOffset, endZ);
+            glVertex3f(
+                endX - dx*arrowSize + dz*arrowSize*0.5f, 
+                endY + yOffset, 
+                endZ - dz*arrowSize - dx*arrowSize*0.5f
+            );
+
+            glVertex3f(endX, endY + yOffset, endZ);
+            glVertex3f(
+                endX - dx*arrowSize - dz*arrowSize*0.5f, 
+                endY + yOffset, 
+                endZ - dz*arrowSize + dx*arrowSize*0.5f
+            );
+
+            // optional: print slope
+            // std::cout << "Slope at (" << plane.cx << ", " << plane.cy << ", " << plane.cz
+            //         << ") = " << slopePercent << "%" << std::endl;
+        }
+        glEnd();
+
+
+
+
         SDL_GL_SwapWindow(window);
 
         // simple FPS print
@@ -211,33 +288,33 @@ int main(int argc, char** argv) {
         auto fpsNow = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(fpsNow - fpsLast).count();
         if (ms >= 1000) {
-            // Always revert, even the very first time
-            for (auto hash : movedHashes) {
-                auto itCell = cellMap.find(hash.first);
-                if (itCell != cellMap.end() && !itCell->second.empty()) {
-                    revertMovement(itCell->second, hash.second);
-                }
-            }
-            movedHashes.clear();
+            // // Always revert, even the very first time
+            // for (auto hash : movedHashes) {
+            //     auto itCell = cellMap.find(hash.first);
+            //     if (itCell != cellMap.end() && !itCell->second.empty()) {
+            //         revertMovement(itCell->second, hash.second);
+            //     }
+            // }
+            // movedHashes.clear();
 
 
-            // move iterator to next cell
-            ++it;
-            if (it == cellMap.end()) {
-                it = cellMap.begin(); // loop back to first cell
-            }
+            // // move iterator to next cell
+            // ++it;
+            // if (it == cellMap.end()) {
+            //     it = cellMap.begin(); // loop back to first cell
+            // }
 
-            // update the new current cell
-            if (it != cellMap.end()) {
-                std::vector<size_t> neighbors = getNeighbors((it->second)[0]->x, (it->second)[0]->z);
-                for (auto neighbor : neighbors) {
-                    if (cellMap.find(neighbor) != cellMap.end() && !it->second.empty()) {
-                        bool middle = neighbor == it->first;
-                        movedHashes.emplace_back(neighbor, middle);
-                        updateMovement(cellMap[neighbor], middle);
-                    }
-                }
-            }
+            // // update the new current cell
+            // if (it != cellMap.end()) {
+            //     std::vector<size_t> neighbors = getNeighbors((it->second)[0]->x, (it->second)[0]->z);
+            //     for (auto neighbor : neighbors) {
+            //         if (cellMap.find(neighbor) != cellMap.end() && !it->second.empty()) {
+            //             bool middle = neighbor == it->first;
+            //             movedHashes.emplace_back(neighbor, middle);
+            //             updateMovement(cellMap[neighbor], middle);
+            //         }
+            //     }
+            // }
 
             std::cout << "FPS: " << frames << std::endl;
             frames = 0;
