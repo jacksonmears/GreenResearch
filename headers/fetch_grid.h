@@ -1,4 +1,4 @@
-
+#include <unordered_set>
 #include <utility>
 #include <cmath>
 #include "Config.h"
@@ -26,3 +26,24 @@ inline size_t fetch_cell(float x, float y) {
     auto [gx, gy] = quantize(x, y);
     return hashCell(gx, gy);
 }
+
+
+inline std::vector<size_t> getNeighbors(float x, float y) {
+    auto [gx, gy] = quantize(x, y);
+
+    std::unordered_set<size_t> seen;
+    std::vector<size_t> neighbors;
+    neighbors.reserve(9);
+
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            size_t cell = hashCell(gx+dx, gy+dy);
+            if (seen.insert(cell).second) { // insert returns true if new
+                neighbors.push_back(cell);
+            }
+        }
+    }
+
+    return neighbors;
+}
+

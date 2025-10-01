@@ -29,6 +29,20 @@ struct Particle {
 };
 
 
+// inline std::tuple<float, float, float> hashToColor(uint64_t h) {
+//     // scramble bits
+//     h ^= (h >> 23);
+//     h *= 0x2127599bf4325c37ULL;
+//     h ^= (h >> 47);
+
+//     // extract bytes
+//     uint8_t r = (h >>  0) & 0xFF;
+//     uint8_t g = (h >>  8) & 0xFF;
+//     uint8_t b = (h >> 16) & 0xFF;
+
+//     // normalize to [0,1] for OpenGL / shaders
+//     return { r/255.0f, g/255.0f, b/255.0f };
+// }
 inline std::tuple<float, float, float> hashToColor(uint64_t h) {
     // scramble bits
     h ^= (h >> 23);
@@ -40,23 +54,30 @@ inline std::tuple<float, float, float> hashToColor(uint64_t h) {
     uint8_t g = (h >>  8) & 0xFF;
     uint8_t b = (h >> 16) & 0xFF;
 
-    // normalize to [0,1] for OpenGL / shaders
-    return { r/255.0f, g/255.0f, b/255.0f };
+    // normalize to [0,1] and avoid 0
+    auto norm = [](uint8_t c) -> float {
+        return c / 255.0f * 0.75f + 0.25f;  // scale to [0.1, 1.0] just so no grid cell is EVER completely black
+    };
+
+    return { norm(r), norm(g), norm(b) };
 }
 
 
-void revertMovement(auto it) {
-    for (Particle* p : it->second) {
-        p->y -= 1.0f;
+
+void revertMovement(std::vector<Particle*>& particles, bool middle) {
+    for (Particle* p : particles) {
+        p->y -= (0.5f + 0.5f*middle);
     }
 }
 
 
-void updateMovement(auto it) {
-    for (Particle* p : it->second) {
-        p->y += 1.0f;
+
+void updateMovement(std::vector<Particle*>& particles, bool middle) {
+    for (Particle* p : particles) {
+        p->y += 0.5f + 0.5f*middle;
     }
 }
+
 
 
 int main(int argc, char** argv) {
@@ -119,9 +140,10 @@ int main(int argc, char** argv) {
 
 
 
-
+    std::vector<std::pair<size_t, bool>> movedHashes; 
+    movedHashes.reserve(20);
     auto it = cellMap.begin();
-    updateMovement(it);
+    // updateMovement(it->second, 1);
 
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -189,9 +211,15 @@ int main(int argc, char** argv) {
         auto fpsNow = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(fpsNow - fpsLast).count();
         if (ms >= 1000) {
-            if (it != cellMap.end()) {
-                revertMovement(it);
+            // Always revert, even the very first time
+            for (auto hash : movedHashes) {
+                auto itCell = cellMap.find(hash.first);
+                if (itCell != cellMap.end() && !itCell->second.empty()) {
+                    revertMovement(itCell->second, hash.second);
+                }
             }
+            movedHashes.clear();
+
 
             // move iterator to next cell
             ++it;
@@ -201,7 +229,14 @@ int main(int argc, char** argv) {
 
             // update the new current cell
             if (it != cellMap.end()) {
-                updateMovement(it);
+                std::vector<size_t> neighbors = getNeighbors((it->second)[0]->x, (it->second)[0]->z);
+                for (auto neighbor : neighbors) {
+                    if (cellMap.find(neighbor) != cellMap.end() && !it->second.empty()) {
+                        bool middle = neighbor == it->first;
+                        movedHashes.emplace_back(neighbor, middle);
+                        updateMovement(cellMap[neighbor], middle);
+                    }
+                }
             }
 
             std::cout << "FPS: " << frames << std::endl;
