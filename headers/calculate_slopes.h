@@ -54,10 +54,12 @@ SlopeResult fitPlane(const std::vector<Particle*>& pts) {
     double norm = std::sqrt(nx*nx + ny*ny + nz*nz);
     nx /= norm; ny /= norm; nz /= norm;
 
+    bool isPlaneValid = pts.size() > 3'000;
+
     return { static_cast<float>(a), static_cast<float>(b), static_cast<float>(c),
              static_cast<float>(nx), static_cast<float>(ny), static_cast<float>(nz),
              static_cast<float>(xBar), static_cast<float>(yBar), static_cast<float>(zBar),
-             true };
+             isPlaneValid };
 }
 
 

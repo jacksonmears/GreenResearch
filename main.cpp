@@ -76,7 +76,7 @@ void updateMovement(std::vector<Particle*>& particles, bool middle) {
 
 int main(int argc, char** argv) {
     
-    std::ifstream file("point_clouds/uphill_space.xyz"); 
+    std::ifstream file("point_clouds/backyard_space.xyz"); 
     if (!file.is_open()) {
         std::cerr << "Failed to open file\n";
         return 1;
@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
     std::vector<SlopeResult> planes;
     planes.reserve(cellMap.size()+1);
     for (auto [key, value] : cellMap) {
+        // std::cout << cellMap[key].size() << "\n";
         planes.emplace_back(fitPlane(value));
     }
 
@@ -198,10 +199,13 @@ int main(int argc, char** argv) {
         // Draw particles
         glBegin(GL_POINTS);
         for(const auto& p : particles) {
+            if (cellMap[p.grid_index].size() < 3'000) continue;
             glColor3f(p.r, p.g, p.b);
             glVertex3f(p.x, p.y, p.z);
         }
         glEnd();
+
+
 
 
         //straight lines from slope perpendicular to surface. still a very good visualization
