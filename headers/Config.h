@@ -4,7 +4,7 @@
 class Config {
 public:
     float SCREEN_WIDTH = 800, SCREEN_HEIGHT = 650;
-    float grid_resolution = 1.0f;
+    float grid_resolution = 1.0f; // originall 1.0f
 
 
     static Config& get() {

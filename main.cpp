@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <random>
 #include <chrono>
+#include <algorithm>
 #include "headers/Config.h"
 #include "headers/fetch_grid.h"
 #include "headers/calculate_slopes.h"
@@ -37,6 +38,32 @@ float rotY = 30.0f;
 //     // normalize to [0,1] for OpenGL / shaders
 //     return { r/255.0f, g/255.0f, b/255.0f };
 // }
+
+
+struct ColorF {
+    float r, g, b;
+};
+
+constexpr std::array<ColorF, 11> slopeGradient = {{
+    {1.0f, 1.0f, 1.0f},   // greenish
+    {0.0f, 1.0f, 0.502f},   // greenish
+    {0.0f, 1.0f, 0.0f},     // green
+    {0.251f, 1.0f, 0.0f},
+    {0.502f, 1.0f, 0.0f},
+    {0.749f, 1.0f, 0.0f},
+    {1.0f, 1.0f, 0.0f},     // yellow
+    {1.0f, 0.749f, 0.0f},
+    {1.0f, 0.502f, 0.0f},
+    {1.0f, 0.251f, 0.0f},
+    {1.0f, 0.0f, 0.0f}      // red
+}};
+
+
+
+
+
+
+
 inline std::tuple<float, float, float> hashToColor(uint64_t h) {
     // scramble bits
     h ^= (h >> 23);
@@ -76,7 +103,7 @@ void updateMovement(std::vector<Particle*>& particles, bool middle) {
 
 int main(int argc, char** argv) {
     
-    std::ifstream file("point_clouds/backyard_space.xyz"); 
+    std::ifstream file("point_clouds/street_space.xyz"); 
     if (!file.is_open()) {
         std::cerr << "Failed to open file\n";
         return 1;
@@ -94,8 +121,8 @@ int main(int argc, char** argv) {
 
         if (iss >> x >> y >> z) {
             size_t cell = fetch_cell(x, z);
-            auto [r,g,b] = hashToColor(cell);
-            particles.emplace_back(x,y,z, r,g,b, cell);
+            // auto [r,g,b] = hashToColor(cell);
+            particles.emplace_back(x,y,z, 1,1,1, cell);
             cellMap[cell].push_back(&particles.back());
         }
         // optionally handle lines that don't have 3 floats
@@ -106,7 +133,23 @@ int main(int argc, char** argv) {
     for (auto [key, value] : cellMap) {
         // std::cout << cellMap[key].size() << "\n";
         planes.emplace_back(fitPlane(value));
+        SlopeResult& plane = planes.back();
+        if (!plane.valid) continue;
+        int slopePercent = static_cast<int>(std::clamp((std::sqrt(plane.a*plane.a + plane.b*plane.b) * 101.0f), 0.0f, 10.0f));
+        // std::cout << slopePercent << "\n";
+        ColorF color = slopeGradient[slopePercent];
+        // std::vector<float> color(3);
+        // if (slopePercent > 12) color = {1, 0,0};
+        // else if (slopePercent >= 6) color = {0.5,0.5, 0};
+        // else color = {0,0.5,1};
+        for (Particle* p : cellMap[key]) {
+            p->r = color.r;
+            p->g = color.g;
+            p->b = color.b;
+        }
     }
+
+
 
     // auto it = cellMap.begin();
     // while (it != cellMap.end()) {
@@ -236,6 +279,7 @@ int main(int argc, char** argv) {
             float dx = -plane.a;
             float dz = -plane.b;
             float len = std::sqrt(dx*dx + dz*dz);
+            float slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
             if (len < 1e-6f) continue; // flat cell, skip
 
             dx /= len; 
@@ -250,7 +294,6 @@ int main(int argc, char** argv) {
             float endZ = startZ + dz * scale;
 
             // color by slope magnitude
-            float slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
             float color = std::min(slopePercent/100.0f, 1.0f);
             glColor3f(color, 0.0f, 1.0f - color);
 
@@ -260,7 +303,7 @@ int main(int argc, char** argv) {
             glVertex3f(endX, endY + yOffset, endZ);
 
             // optional: small arrowhead (two small lines)
-            float arrowSize = 0.1f * scale;
+            float arrowSize = 0.5f * scale;
             glVertex3f(endX, endY + yOffset, endZ);
             glVertex3f(
                 endX - dx*arrowSize + dz*arrowSize*0.5f, 
