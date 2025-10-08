@@ -24,6 +24,7 @@ float rotX = 20.0f;
 float rotY = 30.0f;
 
 
+
 // inline std::tuple<float, float, float> hashToColor(uint64_t h) {
 //     // scramble bits
 //     h ^= (h >> 23);
@@ -101,9 +102,49 @@ void updateMovement(std::vector<Particle*>& particles, bool middle) {
 
 
 
+inline int calculateScalarLinear(int slopePercent, float distance) {
+    const float maxDist = 2.75f;
+    float weight = std::clamp(1.0f - distance / maxDist, 0.0f, 1.0f);
+    return static_cast<int>(slopePercent * weight);
+}
+
+
+inline int calculateScalarPoly(int slopePercent, float distance) {
+    const float maxDist = 2.0f;
+    float t = std::clamp(distance / maxDist, 0.0f, 1.0f);
+
+    // Example: cubic polynomial falloff (smooth start, faster decay)
+    // weight = (1 - t)^3
+    float weight = (1.0f - t) * (1.0f - t) * (1.0f - t);
+
+    return static_cast<int>(slopePercent * weight);
+}
+
+
+
+
+int slopeNeighborsScalar(std::unordered_map<size_t, SlopeResult>& planes, Particle& p, std::vector<size_t>& neighbors) {
+    int weightedScalar = 0, planeCount = 0;
+    for (size_t cell : neighbors) {
+        SlopeResult& plane = planes[cell];
+        if (!plane.valid) continue;
+        ++planeCount;
+        int slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
+        float dx = plane.cx - p.x;
+        float dy = plane.cy - p.y;
+        float dz = plane.cz - p.z;
+        float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
+        weightedScalar += calculateScalarLinear(slopePercent, distance);
+    }
+
+    return weightedScalar/planeCount;
+}
+
+
+
 int main(int argc, char** argv) {
     
-    std::ifstream file("point_clouds/street_space.xyz"); 
+    std::ifstream file("point_clouds/downhill_space.xyz"); 
     if (!file.is_open()) {
         std::cerr << "Failed to open file\n";
         return 1;
@@ -114,6 +155,7 @@ int main(int argc, char** argv) {
     std::string line;
     float grid_resolution = Config::get().grid_resolution;
     std::unordered_map<size_t, std::vector<Particle*>> cellMap;
+    std::unordered_map<size_t, SlopeResult> planes;
 
     while (std::getline(file, line)) {
         std::istringstream iss(line);
@@ -128,40 +170,46 @@ int main(int argc, char** argv) {
         // optionally handle lines that don't have 3 floats
     }
 
-    std::vector<SlopeResult> planes;
-    planes.reserve(cellMap.size()+1);
+
+    // for (auto [key, value] : cellMap) {
+    //     // std::cout << cellMap[key].size() << "\n";
+    //     planes[key] = fitPlane(value);
+    //     SlopeResult& plane = planes[key];
+    //     if (!plane.valid) continue;
+    //     int slopePercent = static_cast<int>(std::clamp((std::sqrt(plane.a*plane.a + plane.b*plane.b) * 101.0f), 0.0f, 10.0f));
+    //     // std::cout << slopePercent << "\n";
+    //     ColorF color = slopeGradient[slopePercent];
+    //     // std::vector<float> color(3);
+    //     // if (slopePercent > 12) color = {1, 0,0};
+    //     // else if (slopePercent >= 6) color = {0.5,0.5, 0};
+    //     // else color = {0,0.5,1};
+    //     for (Particle* p : cellMap[key]) {
+    //         p->r = color.r;
+    //         p->g = color.g;
+    //         p->b = color.b;
+    //     }
+    // }
+
+
+
+
     for (auto [key, value] : cellMap) {
-        // std::cout << cellMap[key].size() << "\n";
-        planes.emplace_back(fitPlane(value));
-        SlopeResult& plane = planes.back();
-        if (!plane.valid) continue;
-        int slopePercent = static_cast<int>(std::clamp((std::sqrt(plane.a*plane.a + plane.b*plane.b) * 101.0f), 0.0f, 10.0f));
-        // std::cout << slopePercent << "\n";
-        ColorF color = slopeGradient[slopePercent];
-        // std::vector<float> color(3);
-        // if (slopePercent > 12) color = {1, 0,0};
-        // else if (slopePercent >= 6) color = {0.5,0.5, 0};
-        // else color = {0,0.5,1};
+        planes[key] = fitPlane(value);
+    }
+
+
+    for (auto [key, value] : cellMap) {
+        std::vector<size_t> neighbors = getNeighbors(value[0]->x, value[0]->z);
+
         for (Particle* p : cellMap[key]) {
+            int slopePercentWeightScalar = std::clamp(slopeNeighborsScalar(planes, *p, neighbors), 0, 10);
+            ColorF color = slopeGradient[slopePercentWeightScalar];
             p->r = color.r;
             p->g = color.g;
             p->b = color.b;
         }
     }
 
-
-
-    // auto it = cellMap.begin();
-    // while (it != cellMap.end()) {
-    //     std::cout << it->second.size() << "\n";
-    //     it++;
-    // }
-
-    // for (int i = 0; i < particles.size(); ++i) {
-    //     if (i%10000 == 0) {
-    //         std::cout << particles[i].grid_index << "\n";
-    //     }
-    // }
 
     SDL_Window* window = SDL_CreateWindow("3D Particles",
         SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_OPENGL);
@@ -241,7 +289,13 @@ int main(int argc, char** argv) {
 
         // Draw particles
         glBegin(GL_POINTS);
-        for(const auto& p : particles) {
+        // for(const auto& p : particles) {
+        //     if (cellMap[p.grid_index].size() < 3'000) continue;
+        //     glColor3f(p.r, p.g, p.b);
+        //     glVertex3f(p.x, p.y, p.z);
+        // }
+        for(int i = 0; i < particles.size(); i += 20) {
+            Particle& p = particles[i];
             if (cellMap[p.grid_index].size() < 3'000) continue;
             glColor3f(p.r, p.g, p.b);
             glVertex3f(p.x, p.y, p.z);
@@ -272,7 +326,7 @@ int main(int argc, char** argv) {
 
         glLineWidth(2.0f);
         glBegin(GL_LINES);
-        for (SlopeResult& plane : planes) {
+        for (auto& [key, plane] : planes) {
             if (!plane.valid) continue;
 
             // compute downhill direction
