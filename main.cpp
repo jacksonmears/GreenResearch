@@ -144,7 +144,7 @@ int slopeNeighborsScalar(std::unordered_map<size_t, SlopeResult>& planes, Partic
 
 int main(int argc, char** argv) {
     
-    std::ifstream file("point_clouds/downhill_space.xyz"); 
+    std::ifstream file("point_clouds/backyard_space.xyz"); 
     if (!file.is_open()) {
         std::cerr << "Failed to open file\n";
         return 1;
