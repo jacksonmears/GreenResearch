@@ -23,7 +23,29 @@ const int SCREEN_HEIGHT = 600;
 float rotX = 20.0f;
 float rotY = 30.0f;
 
+// ---- Math helpers (column-major matrices) ----
+struct Vec3 { float x,y,z; };
+static Vec3 cross(const Vec3& a, const Vec3& b) {
+    return { a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x };
+}
+static float dot(const Vec3& a, const Vec3& b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+static Vec3 normalize(const Vec3& v) {
+    float L = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+    return { v.x / L, v.y / L, v.z / L };
+}
 
+// produce a 4x4 perspective (column-major) matrix
+std::array<float,16> perspective(float fovYRadians, float aspect, float nearP, float farP) {
+    float f = 1.0f / std::tan(fovYRadians / 2.0f);
+    std::array<float,16> m = {};
+    m[0] = f / aspect;
+    m[5] = f;
+    m[10] = (farP + nearP) / (nearP - farP);
+    m[11] = -1.0f;
+    m[14] = (2.0f * farP * nearP) / (nearP - farP);
+    // m[15] = 0 set by {}
+    return m;
+}
 
 // inline std::tuple<float, float, float> hashToColor(uint64_t h) {
 //     // scramble bits
@@ -92,7 +114,31 @@ void revertMovement(std::vector<Particle*>& particles, bool middle) {
     }
 }
 
+    const int SCREEN_WIDTH = 1280;
+    const int SCREEN_HEIGHT = 720;
 
+    // request OpenGL 3.3 core
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+    SDL_Window* window = SDL_CreateWindow("3D Random Points",
+                                          SCREEN_WIDTH,
+                                          SCREEN_HEIGHT,
+                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    if (!window) {
+        std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
+        SDL_Quit();
+        return -1;
+    }
+
+    SDL_GLContext glContext = SDL_GL_CreateContext(window);
+    if (!glContext) {
+        std::cerr << "SDL_GL_CreateContext failed: " << SDL_GetError() << std::endl;
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return -1;
+    }
 
 void updateMovement(std::vector<Particle*>& particles, bool middle) {
     for (Particle* p : particles) {
@@ -100,6 +146,32 @@ void updateMovement(std::vector<Particle*>& particles, bool middle) {
     }
 }
 
+    // Create shader program
+    GLuint program = createProgram(vertexShaderSrc, fragmentShaderSrc);
+
+    // Generate 5 random 3D points with colors
+    std::mt19937 rng((unsigned)std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    std::uniform_real_distribution<float> posDist(-3.0f, 3.0f);
+    std::uniform_real_distribution<float> zDist(-6.0f, -1.0f);
+    std::uniform_real_distribution<float> colDist(0.2f, 1.0f);
+
+    const int N = 5;
+    std::vector<float> interleaved;
+    interleaved.reserve(N * 6); // pos(3) + color(3)
+    for (int i = 0; i < N; ++i) {
+        float x = posDist(rng);
+        float y = posDist(rng);
+        float z = zDist(rng);
+        float r = colDist(rng);
+        float g = colDist(rng);
+        float b = colDist(rng);
+        interleaved.push_back(x);
+        interleaved.push_back(y);
+        interleaved.push_back(z);
+        interleaved.push_back(r);
+        interleaved.push_back(g);
+        interleaved.push_back(b);
+    }
 
 
 inline int calculateScalarLinear(int slopePercent, float distance) {
