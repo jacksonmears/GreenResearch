@@ -1,3 +1,5 @@
+latest updates are visible on "Smoothing-Grid-Cells" branch!
+
 # Golf Green LiDAR Visualization & Slope Analysis
 
 This project processes **LiDAR scans of a golf putting green** to generate a **3D visualization** of the terrain, computes the **slopes at each region**, and visualizes the **downhill direction**. It is intended as a research/visualization tool for studying putting green topography and can serve as the basis for further AI or simulation work.
