@@ -137,61 +137,116 @@ int slopeNeighborsScalar(std::unordered_map<size_t, SlopeResult>& planes, Partic
         weightedScalar += calculateScalarLinear(slopePercent, distance);
     }
 
-    return weightedScalar/planeCount;
+    return (planeCount) ? weightedScalar/planeCount : 0;
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+std::pair<float, size_t> parseFloat4Decimal(const char* s) {
+    const char* start = s;
+
+    while (*s == ' ') ++s;
+
+    int sign = 1;
+    if (*s == '-') { sign = -1; ++s; }
+
+    int intPart = 0;
+    while (*s >= '0' && *s <= '9') {
+        intPart = intPart * 10 + (*s - '0');
+        ++s;
+    }
+
+    ++s; // skip decimal point
+
+    int fracPart = 0;
+    while (*s >= '0' && *s <= '9') {
+        fracPart = fracPart * 10 + (*s - '0');
+        ++s;
+    }
+
+    float value = sign * (intPart + fracPart * 0.0001f);
+    size_t consumed = s - start;
+
+    return {value, consumed};
 }
 
 
 
-int main(int argc, char** argv) {
-    
-    std::ifstream file("point_clouds/backyard_space.xyz"); 
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file\n";
-        return 1;
+size_t getSizePCD(const char* file) {
+    FILE* fp = fopen(file, "r");
+    if (!fp) return 0;
+
+    size_t count = 0;
+    const size_t BUF_SIZE = 1 << 20; // 1 MB
+    char* buf = new char[BUF_SIZE];
+    while (size_t n = fread(buf, 1, sizeof(buf), fp)) {
+        for (size_t i = 0; i < n; ++i)
+            if (buf[i] == '\n') ++count;
+    }
+    fclose(fp);
+    return count;
+}
+
+
+void readXYZFast(const char* file, std::vector<Particle>& particles, std::unordered_map<size_t, std::vector<Particle*>>& cellMap) {
+
+    size_t particleCount = getSizePCD(file);
+
+    FILE* fp = fopen(file, "r");
+    if (!fp) return;
+
+    particles.reserve(particleCount); 
+
+    const size_t BUF_SIZE = 1 << 20; // 1 MB
+    char* buf = new char[BUF_SIZE];
+    size_t bufEnd = 0, bufPos = 0;
+
+    char line[40]; // each line is ~40 char
+    size_t linePos = 0;
+
+    while (true) {
+        if (bufPos == bufEnd) {
+            bufEnd = fread(buf, 1, sizeof(buf), fp);
+            if (bufEnd == 0) break; // EOF
+            bufPos = 0;
+        }
+
+        char c = buf[bufPos++];
+        line[linePos++] = c;
+
+        if (c == '\n') {
+            // Parse line
+            line[linePos] = '\0';
+            auto [x, offset1] = parseFloat4Decimal(line);
+            auto [y, offset2] = parseFloat4Decimal(line + offset1);
+            auto [z, _] = parseFloat4Decimal(line + offset1 + offset2);
+            linePos = 0;
+            size_t cell = fetch_cell(x, z);
+            particles.emplace_back(x, y, z, 1, 1, 1, cell);
+            cellMap[cell].push_back(&particles.back());
+        }
     }
 
+    fclose(fp);
+}
+
+
+
+
+
+int main(int argc, char** argv) {
+
+
+    static auto msStart = std::chrono::high_resolution_clock::now();
+    
+    const char* file = "point_clouds/south_space.xyz";
+
     std::vector<Particle> particles;
-    particles.reserve(5'000'000); // withouth this the particles vector is reblocked and pointers created in cellMap are invalid. a very awesome real life case of the reappointing of capacity and the real dangers of pointers and their safety!
-    std::string line;
-    float grid_resolution = Config::get().grid_resolution;
     std::unordered_map<size_t, std::vector<Particle*>> cellMap;
     std::unordered_map<size_t, SlopeResult> planes;
 
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        float x, y, z;
-
-        if (iss >> x >> y >> z) {
-            size_t cell = fetch_cell(x, z);
-            // auto [r,g,b] = hashToColor(cell);
-            particles.emplace_back(x,y,z, 1,1,1, cell);
-            cellMap[cell].push_back(&particles.back());
-        }
-        // optionally handle lines that don't have 3 floats
-    }
-
-
-    // for (auto [key, value] : cellMap) {
-    //     // std::cout << cellMap[key].size() << "\n";
-    //     planes[key] = fitPlane(value);
-    //     SlopeResult& plane = planes[key];
-    //     if (!plane.valid) continue;
-    //     int slopePercent = static_cast<int>(std::clamp((std::sqrt(plane.a*plane.a + plane.b*plane.b) * 101.0f), 0.0f, 10.0f));
-    //     // std::cout << slopePercent << "\n";
-    //     ColorF color = slopeGradient[slopePercent];
-    //     // std::vector<float> color(3);
-    //     // if (slopePercent > 12) color = {1, 0,0};
-    //     // else if (slopePercent >= 6) color = {0.5,0.5, 0};
-    //     // else color = {0,0.5,1};
-    //     for (Particle* p : cellMap[key]) {
-    //         p->r = color.r;
-    //         p->g = color.g;
-    //         p->b = color.b;
-    //     }
-    // }
-
-
-
+    readXYZFast(file, particles, cellMap);
 
     for (auto [key, value] : cellMap) {
         planes[key] = fitPlane(value);
@@ -211,6 +266,34 @@ int main(int argc, char** argv) {
     }
 
 
+    auto lastTime = std::chrono::high_resolution_clock::now();
+    int frames = 0;
+    bool running = true; // turned off temporarily while we attempt to create a more efficient solution (memory and time complexity wise!)
+    SDL_Event event;
+    bool mouseDown = false;
+    int lastMouseX = 0, lastMouseY = 0;
+    float cameraDistance = 5.0f;
+
+
+
+    // std::vector<std::pair<size_t, bool>> movedHashes; 
+    // movedHashes.reserve(20);
+    // auto it = cellMap.begin();
+    // updateMovement(it->second, 1);
+
+
+    auto msEnd = std::chrono::high_resolution_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(msEnd - msStart).count();
+
+    std::cout << static_cast<double>(ms)/1000 << std::endl;
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
     SDL_Window* window = SDL_CreateWindow("3D Particles",
         SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_OPENGL);
 
@@ -220,22 +303,7 @@ int main(int argc, char** argv) {
     glEnable(GL_DEPTH_TEST);
     glPointSize(5.0f); // visible particle size
 
-    // auto particles = generateParticles(1000); // start with 10
 
-    auto lastTime = std::chrono::high_resolution_clock::now();
-    int frames = 0;
-    bool running = true;
-    SDL_Event event;
-    bool mouseDown = false;
-    int lastMouseX = 0, lastMouseY = 0;
-    float cameraDistance = 5.0f;
-
-
-
-    std::vector<std::pair<size_t, bool>> movedHashes; 
-    movedHashes.reserve(20);
-    auto it = cellMap.begin();
-    // updateMovement(it->second, 1);
 
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -289,14 +357,9 @@ int main(int argc, char** argv) {
 
         // Draw particles
         glBegin(GL_POINTS);
-        // for(const auto& p : particles) {
-        //     if (cellMap[p.grid_index].size() < 3'000) continue;
-        //     glColor3f(p.r, p.g, p.b);
-        //     glVertex3f(p.x, p.y, p.z);
-        // }
         for(int i = 0; i < particles.size(); i += 20) {
             Particle& p = particles[i];
-            if (cellMap[p.grid_index].size() < 3'000) continue;
+            if (cellMap[p.grid_index].size() < 5'000) continue;
             glColor3f(p.r, p.g, p.b);
             glVertex3f(p.x, p.y, p.z);
         }
