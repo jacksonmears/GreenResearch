@@ -9,20 +9,16 @@ struct Particle {
 };
 
 struct SlopeResult {
-    float a; // dz/dx
-    float b; // dz/dy
-    float c; // plane offset
-    float nx, ny, nz; // unit normal
-    float cx, cy, cz;
+    float a, b, len, slopePercent, dx, dz, endX, endY, endZ, color, xBar, yBar, zBar;
     bool valid;
 };
 
 
 
 
-SlopeResult fitPlane(const std::vector<Particle*>& pts) {
+SlopeResult fitPlane(const std::vector<Particle*>& pts, float scale) {
     size_t n = pts.size();
-    if (n < 3) return {0,0,0,0,0,0,0,0,0,false};
+    if (n < 3) return {0,0,0,0,0,0,0,0,0,0,0,0,0,false};
 
     double Sx=0, Sy=0, Sz=0;
     for (auto p : pts) { Sx += p->x; Sy += p->y; Sz += p->z; }
@@ -41,7 +37,7 @@ SlopeResult fitPlane(const std::vector<Particle*>& pts) {
     }
 
     double det = Sxx*Szz - Sxz*Sxz;
-    if (std::abs(det) < 1e-12) return {0,0,0,0,0,0,0,0,0,false};
+    if (std::abs(det) < 1e-12) return {0,0,0,0,0,0,0,0,0,0,0,0,0,false};
 
     double a = (Sxy*Szz - Szy*Sxz)/det; // dy/dx
     double b = (Szy*Sxx - Sxy*Sxz)/det; // dy/dz
@@ -56,8 +52,23 @@ SlopeResult fitPlane(const std::vector<Particle*>& pts) {
 
     bool isPlaneValid = pts.size() > 3'000;
 
-    return { static_cast<float>(a), static_cast<float>(b), static_cast<float>(c),
-             static_cast<float>(nx), static_cast<float>(ny), static_cast<float>(nz),
+
+
+
+    float len = std::sqrt(a*a + b*b);
+    float slopePercent = len * 100.0f;
+
+
+    float dx = -a/len;
+    float dz = -b/len;
+
+    float endX = xBar + dx * scale;
+    float endY = yBar; // keep it parallel to the surface
+    float endZ = zBar + dz * scale;
+
+    float color = std::min(slopePercent/100.0f, 1.0f);
+
+    return { static_cast<float>(a), static_cast<float>(b), len, slopePercent, dx, dz, endX, endY, endZ, color,
              static_cast<float>(xBar), static_cast<float>(yBar), static_cast<float>(zBar),
              isPlaneValid };
 }

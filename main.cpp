@@ -14,6 +14,8 @@
 #include "headers/Config.h"
 #include "headers/fetch_grid.h"
 #include "headers/calculate_slopes.h"
+#include <filesystem>
+#include <cstring>      // for memchr
 
 // Window settings
 const int SCREEN_WIDTH = 800;
@@ -130,9 +132,9 @@ int slopeNeighborsScalar(std::unordered_map<size_t, SlopeResult>& planes, Partic
         if (!plane.valid) continue;
         ++planeCount;
         int slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
-        float dx = plane.cx - p.x;
-        float dy = plane.cy - p.y;
-        float dz = plane.cz - p.z;
+        float dx = plane.xBar - p.x;
+        float dy = plane.yBar - p.y;
+        float dz = plane.zBar - p.z;
         float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
         weightedScalar += calculateScalarLinear(slopePercent, distance);
     }
@@ -202,40 +204,47 @@ void readXYZFast(const char* file, std::vector<Particle>& particles, std::unorde
     char* buf = new char[BUF_SIZE];
     size_t bufEnd = 0, bufPos = 0;
 
-    char line[40]; // each line is ~40 char
-    size_t linePos = 0;
+
 
     while (true) {
         if (bufPos == bufEnd) {
-            bufEnd = fread(buf, 1, sizeof(buf), fp);
-            if (bufEnd == 0) break; // EOF
+            bufEnd = fread(buf, 1, BUF_SIZE, fp);
+            if (bufEnd == 0) break;
             bufPos = 0;
         }
 
-        char c = buf[bufPos++];
-        line[linePos++] = c;
+        char* lineStart = &buf[bufPos];
+        char* lineEnd = (char*)memchr(lineStart, '\n', bufEnd - bufPos);
 
-        if (c == '\n') {
-            // Parse line
-            line[linePos] = '\0';
-            auto [x, offset1] = parseFloat4Decimal(line);
-            auto [y, offset2] = parseFloat4Decimal(line + offset1);
-            auto [z, _] = parseFloat4Decimal(line + offset1 + offset2);
-            linePos = 0;
-            size_t cell = fetch_cell(x, z);
-            particles.emplace_back(x, y, z, 1, 1, 1, cell);
-            cellMap[cell].push_back(&particles.back());
+        if (!lineEnd) {
+            // Handle case where newline crosses buffer boundary
+            size_t remain = bufEnd - bufPos;
+            memmove(buf, lineStart, remain);
+            bufEnd = fread(buf + remain, 1, BUF_SIZE - remain, fp) + remain;
+            bufPos = 0;
+            continue;
         }
+
+        *lineEnd = '\0';
+        auto [x, offset1] = parseFloat4Decimal(lineStart);
+        auto [y, offset2] = parseFloat4Decimal(lineStart + offset1);
+        auto [z, _]       = parseFloat4Decimal(lineStart + offset1 + offset2);
+
+        bufPos = lineEnd - buf + 1;
+
+        size_t cell = fetch_cell(x, z);
+        particles.emplace_back(x, y, z, 1, 1, 1, cell);
+        cellMap[cell].push_back(&particles.back());
     }
+
 
     fclose(fp);
 }
 
 
 
-
-
 int main(int argc, char** argv) {
+
 
 
     static auto msStart = std::chrono::high_resolution_clock::now();
@@ -248,8 +257,10 @@ int main(int argc, char** argv) {
 
     readXYZFast(file, particles, cellMap);
 
+    float scale = 0.5f; // arrow length
+
     for (auto [key, value] : cellMap) {
-        planes[key] = fitPlane(value);
+        planes[key] = fitPlane(value, scale);
     }
 
 
@@ -268,7 +279,7 @@ int main(int argc, char** argv) {
 
     auto lastTime = std::chrono::high_resolution_clock::now();
     int frames = 0;
-    bool running = true; // turned off temporarily while we attempt to create a more efficient solution (memory and time complexity wise!)
+    bool running = true; 
     SDL_Event event;
     bool mouseDown = false;
     int lastMouseX = 0, lastMouseY = 0;
@@ -276,22 +287,17 @@ int main(int argc, char** argv) {
 
 
 
-    // std::vector<std::pair<size_t, bool>> movedHashes; 
-    // movedHashes.reserve(20);
-    // auto it = cellMap.begin();
-    // updateMovement(it->second, 1);
-
-
     auto msEnd = std::chrono::high_resolution_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(msEnd - msStart).count();
 
-    std::cout << static_cast<double>(ms)/1000 << std::endl;
+    std::cout << static_cast<double>(ms)/1000 << "\n";
 
 
 
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 
     SDL_Window* window = SDL_CreateWindow("3D Particles",
@@ -302,7 +308,6 @@ int main(int argc, char** argv) {
 
     glEnable(GL_DEPTH_TEST);
     glPointSize(5.0f); // visible particle size
-
 
 
     while (running) {
@@ -368,71 +373,35 @@ int main(int argc, char** argv) {
 
 
 
-        //straight lines from slope perpendicular to surface. still a very good visualization
-        // glLineWidth(2.0f);
-        // glBegin(GL_LINES);
-        // for (SlopeResult& plane : planes) {
-        //     if (!plane.valid) continue;
-        //     float slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
-        //     std::cout << "Cell centroid (" << plane.cx << ", " << plane.cy << ", " << plane.cz << ") "
-        //             << "Slope: " << slopePercent << "%\n";
-
-        //     float scale = 0.5f; // length of normal
-        //     glColor3f(1.0f, 0.0f, 0.0f);
-
-        //     glVertex3f(plane.cx, plane.cy, plane.cz); // start at centroid
-        //     glVertex3f(plane.cx + plane.nx*scale,
-        //             plane.cy + plane.ny*scale,
-        //             plane.cz + plane.nz*scale); // tip of normal
-        // }
-        // glEnd();
-
         glLineWidth(2.0f);
         glBegin(GL_LINES);
         for (auto& [key, plane] : planes) {
-            if (!plane.valid) continue;
-
-            // compute downhill direction
-            float dx = -plane.a;
-            float dz = -plane.b;
-            float len = std::sqrt(dx*dx + dz*dz);
-            float slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
-            if (len < 1e-6f) continue; // flat cell, skip
-
-            dx /= len; 
-            dz /= len;
-
-            float scale = 0.5f; // arrow length
-            float startX = plane.cx;
-            float startY = plane.cy;
-            float startZ = plane.cz;
-            float endX = startX + dx * scale;
-            float endY = startY; // keep it parallel to the surface
-            float endZ = startZ + dz * scale;
-
-            // color by slope magnitude
-            float color = std::min(slopePercent/100.0f, 1.0f);
-            glColor3f(color, 0.0f, 1.0f - color);
+            if (!plane.valid || plane.len < 1e-6f) continue;
 
             float yOffset = 0.25f;
+            float arrowSize = 0.5f * scale;
+
+
+            // color by slope magnitude
+            glColor3f(plane.color, 0.0f, 1.0f - plane.color);
+
             // draw line segment
-            glVertex3f(startX, startY + yOffset, startZ);
-            glVertex3f(endX, endY + yOffset, endZ);
+            glVertex3f(plane.xBar, plane.yBar + yOffset, plane.zBar);
+            glVertex3f(plane.endX, plane.endY + yOffset, plane.endZ);
 
             // optional: small arrowhead (two small lines)
-            float arrowSize = 0.5f * scale;
-            glVertex3f(endX, endY + yOffset, endZ);
+            glVertex3f(plane.endX, plane.endY + yOffset, plane.endZ);
             glVertex3f(
-                endX - dx*arrowSize + dz*arrowSize*0.5f, 
-                endY + yOffset, 
-                endZ - dz*arrowSize - dx*arrowSize*0.5f
+                plane.endX - plane.dx*arrowSize + plane.dz*arrowSize*0.5f, 
+                plane.endY + yOffset, 
+                plane.endZ - plane.dz*arrowSize - plane.dx*arrowSize*0.5f
             );
 
-            glVertex3f(endX, endY + yOffset, endZ);
+            glVertex3f(plane.endX, plane.endY + yOffset, plane.endZ);
             glVertex3f(
-                endX - dx*arrowSize - dz*arrowSize*0.5f, 
-                endY + yOffset, 
-                endZ - dz*arrowSize + dx*arrowSize*0.5f
+                plane.endX - plane.dx*arrowSize - plane.dz*arrowSize*0.5f, 
+                plane.endY + yOffset, 
+                plane.endZ - plane.dz*arrowSize + plane.dx*arrowSize*0.5f
             );
 
             // optional: print slope
@@ -452,35 +421,7 @@ int main(int argc, char** argv) {
         auto fpsNow = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(fpsNow - fpsLast).count();
         if (ms >= 1000) {
-            // // Always revert, even the very first time
-            // for (auto hash : movedHashes) {
-            //     auto itCell = cellMap.find(hash.first);
-            //     if (itCell != cellMap.end() && !itCell->second.empty()) {
-            //         revertMovement(itCell->second, hash.second);
-            //     }
-            // }
-            // movedHashes.clear();
-
-
-            // // move iterator to next cell
-            // ++it;
-            // if (it == cellMap.end()) {
-            //     it = cellMap.begin(); // loop back to first cell
-            // }
-
-            // // update the new current cell
-            // if (it != cellMap.end()) {
-            //     std::vector<size_t> neighbors = getNeighbors((it->second)[0]->x, (it->second)[0]->z);
-            //     for (auto neighbor : neighbors) {
-            //         if (cellMap.find(neighbor) != cellMap.end() && !it->second.empty()) {
-            //             bool middle = neighbor == it->first;
-            //             movedHashes.emplace_back(neighbor, middle);
-            //             updateMovement(cellMap[neighbor], middle);
-            //         }
-            //     }
-            // }
-
-            std::cout << "FPS: " << frames << std::endl;
+            std::cout << "FPS: " << frames << "\n";
             frames = 0;
             fpsLast = fpsNow;
         }
