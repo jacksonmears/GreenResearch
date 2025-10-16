@@ -28,10 +28,7 @@ const int SCREEN_HEIGHT = 600;
 float rotX = 20.0f;
 float rotY = 30.0f;
 
-struct Cell {
-    size_t start_index, end_index;
-    SlopeResult plane;
-};
+
 
 struct ColorF {
     float r, g, b;
@@ -111,11 +108,11 @@ inline int calculateScalarPoly(int slopePercent, float distance) {
 
 
 
-int slopeNeighborsScalar(const ska::flat_hash_map<size_t, Cell>& tt, Particle& p, std::vector<size_t>& neighbors) {
+int slopeNeighborsScalar(const ska::flat_hash_map<size_t, Cell>& tt, Particle& p, std::vector<Cell*>& neighbors) {
+
     int weightedScalar = 0, planeCount = 0;
-    for (size_t cell : neighbors) {
-        auto it = tt.find(cell);
-        const SlopeResult& plane = it->second.plane;
+    for (Cell* cell : neighbors) {
+        SlopeResult& plane = cell->plane;
         if (!plane.valid) continue;
         ++planeCount;
         int slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
@@ -283,7 +280,7 @@ int main(int argc, char** argv) {
     
     for (auto [key, value] : tt) {
         Cell* c = &tt[key];
-        std::vector<size_t> neighbors = getNeighbors(particles[tt[key].start_index].x, particles[tt[key].start_index].z);
+        std::vector<Cell*> neighbors = getNeighbors(particles[tt[key].start_index].x, particles[tt[key].start_index].z, tt);
 
         for (int i = tt[key].start_index; i < (*c).end_index; ++i) {
             Particle* p = &particles[i];
@@ -295,6 +292,7 @@ int main(int argc, char** argv) {
             p->r = color.r;
             p->g = color.g;
             p->b = color.b;
+
         }
     }
 
@@ -309,10 +307,7 @@ int main(int argc, char** argv) {
 
 
 
-    auto msEnd = std::chrono::high_resolution_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(msEnd - msStart).count();
 
-    std::cout << static_cast<double>(ms)/1000 << "\n";
 
     // size_t mx = 0;
     // for (auto [key, value] : cellMap) {
@@ -337,6 +332,11 @@ int main(int argc, char** argv) {
     glEnable(GL_DEPTH_TEST);
     glPointSize(5.0f); // visible particle size
 
+
+    auto msEnd = std::chrono::high_resolution_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(msEnd - msStart).count();
+
+    std::cout << "Execution time:" << static_cast<double>(ms)/1000 << " seconds\n";
 
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -450,7 +450,7 @@ int main(int argc, char** argv) {
         auto fpsNow = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(fpsNow - fpsLast).count();
         if (ms >= 1000) {
-            std::cout << "FPS: " << frames << "\n";
+            // std::cout << "FPS: " << frames << "\n";
             frames = 0;
             fpsLast = fpsNow;
         }

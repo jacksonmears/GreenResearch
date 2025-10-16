@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include <cmath>
 #include <iostream>
@@ -13,7 +15,10 @@ struct SlopeResult {
     bool valid;
 };
 
-
+struct Cell {
+    size_t start_index, end_index;
+    SlopeResult plane;
+};
 
 
 // SlopeResult fitPlane(const std::vector<Particle*>& pts, float scale) {

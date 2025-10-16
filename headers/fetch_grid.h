@@ -1,7 +1,11 @@
+#pragma once
+
 #include <unordered_set>
 #include <utility>
 #include <cmath>
 #include "Config.h"
+#include "flat_hash_map.hpp"  // from https://github.com/skarupke/flat_hash_map
+#include "calculate_slopes.h"
 
 float grid_resolution = Config::get().grid_resolution;
 
@@ -28,21 +32,23 @@ inline size_t fetch_cell(float x, float y) {
 }
 
 
-inline std::vector<size_t> getNeighbors(float x, float y) {
+
+inline std::vector<Cell*> getNeighbors(float x, float y, ska::flat_hash_map<size_t, Cell>& tt) {
     auto [gx, gy] = quantize(x, y);
 
     std::unordered_set<size_t> seen;
-    std::vector<size_t> neighbors;
+    std::vector<Cell*> neighbors;
     neighbors.reserve(9);
 
     for (int dx = -1; dx <= 1; ++dx) {
         for (int dy = -1; dy <= 1; ++dy) {
             size_t cell = hashCell(gx+dx, gy+dy);
             if (seen.insert(cell).second) { // insert returns true if new
-                neighbors.push_back(cell);
+                neighbors.push_back(&tt.find(cell)->second);
             }
         }
     }
+
 
     return neighbors;
 }
