@@ -6,7 +6,8 @@
                 "${workspaceFolder}/**",
                 "C:/libs/SDL3/x86_64-w64-mingw32/include",
                 "C:/Users/jacks/OpenCL/include",
-                "D:/Apps/glew-2.1.0/include"
+                "D:/Apps/glew-2.1.0/include",
+                "C:/Users/jacks/GreenResearch/external"
             ],
             "compilerPath": "C:/Users/jacks/msys64/mingw64/bin/g++.exe",
             "cStandard": "c17",

@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include <map>
 #include <random>
 #include <chrono>
 #include <algorithm>
@@ -16,6 +17,8 @@
 #include "headers/calculate_slopes.h"
 #include <filesystem>
 #include <cstring>      // for memchr
+#include <windows.h>
+#include "flat_hash_map.hpp"  // from https://github.com/skarupke/flat_hash_map
 
 // Window settings
 const int SCREEN_WIDTH = 800;
@@ -25,23 +28,10 @@ const int SCREEN_HEIGHT = 600;
 float rotX = 20.0f;
 float rotY = 30.0f;
 
-
-
-// inline std::tuple<float, float, float> hashToColor(uint64_t h) {
-//     // scramble bits
-//     h ^= (h >> 23);
-//     h *= 0x2127599bf4325c37ULL;
-//     h ^= (h >> 47);
-
-//     // extract bytes
-//     uint8_t r = (h >>  0) & 0xFF;
-//     uint8_t g = (h >>  8) & 0xFF;
-//     uint8_t b = (h >> 16) & 0xFF;
-
-//     // normalize to [0,1] for OpenGL / shaders
-//     return { r/255.0f, g/255.0f, b/255.0f };
-// }
-
+struct Cell {
+    size_t start_index, end_index;
+    SlopeResult plane;
+};
 
 struct ColorF {
     float r, g, b;
@@ -60,10 +50,6 @@ constexpr std::array<ColorF, 11> slopeGradient = {{
     {1.0f, 0.251f, 0.0f},
     {1.0f, 0.0f, 0.0f}      // red
 }};
-
-
-
-
 
 
 
@@ -125,10 +111,11 @@ inline int calculateScalarPoly(int slopePercent, float distance) {
 
 
 
-int slopeNeighborsScalar(std::unordered_map<size_t, SlopeResult>& planes, Particle& p, std::vector<size_t>& neighbors) {
+int slopeNeighborsScalar(const ska::flat_hash_map<size_t, Cell>& tt, Particle& p, std::vector<size_t>& neighbors) {
     int weightedScalar = 0, planeCount = 0;
     for (size_t cell : neighbors) {
-        SlopeResult& plane = planes[cell];
+        auto it = tt.find(cell);
+        const SlopeResult& plane = it->second.plane;
         if (!plane.valid) continue;
         ++planeCount;
         int slopePercent = std::sqrt(plane.a*plane.a + plane.b*plane.b) * 100.0f;
@@ -144,34 +131,6 @@ int slopeNeighborsScalar(std::unordered_map<size_t, SlopeResult>& planes, Partic
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-std::pair<float, size_t> parseFloat4Decimal(const char* s) {
-    const char* start = s;
-
-    while (*s == ' ') ++s;
-
-    int sign = 1;
-    if (*s == '-') { sign = -1; ++s; }
-
-    int intPart = 0;
-    while (*s >= '0' && *s <= '9') {
-        intPart = intPart * 10 + (*s - '0');
-        ++s;
-    }
-
-    ++s; // skip decimal point
-
-    int fracPart = 0;
-    while (*s >= '0' && *s <= '9') {
-        fracPart = fracPart * 10 + (*s - '0');
-        ++s;
-    }
-
-    float value = sign * (intPart + fracPart * 0.0001f);
-    size_t consumed = s - start;
-
-    return {value, consumed};
-}
 
 
 
@@ -191,54 +150,83 @@ size_t getSizePCD(const char* file) {
 }
 
 
-void readXYZFast(const char* file, std::vector<Particle>& particles, std::unordered_map<size_t, std::vector<Particle*>>& cellMap) {
+
+float parseFloat4Decimal(char*& data) {
+    while (*data == ' ') ++data;
+
+    int sign = 1;
+    if (*data == '-') { sign = -1; ++data; }
+
+    int intPart = 0;
+    while (*data >= '0' && *data <= '9') {
+        intPart = intPart * 10 + (*data - '0');
+        ++data;
+    }
+
+    ++data; // skip decimal point
+
+    int fracPart = 0;
+    while (*data >= '0' && *data <= '9') {
+        fracPart = fracPart * 10 + (*data - '0');
+        ++data;
+    }
+
+    while (*data == '\n' || *data == '\r' || *data == ' ') ++data;
+
+    float value = sign * (intPart + fracPart * 0.0001f);
+
+    return value;
+}
+
+
+void readXYZFast(const char* file, std::vector<Particle>& particles) {
 
     size_t particleCount = getSizePCD(file);
-
-    FILE* fp = fopen(file, "r");
-    if (!fp) return;
-
-    particles.reserve(particleCount); 
-
-    const size_t BUF_SIZE = 1 << 20; // 1 MB
-    char* buf = new char[BUF_SIZE];
-    size_t bufEnd = 0, bufPos = 0;
+    particles.reserve(particleCount);
 
 
+    HANDLE hFile = CreateFileA(
+        file, GENERIC_READ, FILE_SHARE_READ, NULL,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
+    if (hFile == INVALID_HANDLE_VALUE) {
+        std::cerr << "Failed to open file\n";
+        return;
+    }
+
+    HANDLE hMap = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (!hMap) {
+        std::cerr << "Failed to create file mapping\n";
+        CloseHandle(hFile);
+        return;
+    }
+
+    char* data = (char*)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+    if (!data) {
+        std::cerr << "Failed to map view of file\n";
+        CloseHandle(hMap);
+        CloseHandle(hFile);
+        return;
+    }
+
+    int iterator = 0;
     while (true) {
-        if (bufPos == bufEnd) {
-            bufEnd = fread(buf, 1, BUF_SIZE, fp);
-            if (bufEnd == 0) break;
-            bufPos = 0;
+        ++iterator;
+        if (*data == '\0') break;
+        float values[3];
+        for (int i = 0; i <= 2; ++i) {
+            values[i] = parseFloat4Decimal(data);
         }
+        // if (iterator%400000 == 0) std::cout << values[0] << " " << values[1] << " " <<  values[2] << "\n";
 
-        char* lineStart = &buf[bufPos];
-        char* lineEnd = (char*)memchr(lineStart, '\n', bufEnd - bufPos);
-
-        if (!lineEnd) {
-            // Handle case where newline crosses buffer boundary
-            size_t remain = bufEnd - bufPos;
-            memmove(buf, lineStart, remain);
-            bufEnd = fread(buf + remain, 1, BUF_SIZE - remain, fp) + remain;
-            bufPos = 0;
-            continue;
-        }
-
-        *lineEnd = '\0';
-        auto [x, offset1] = parseFloat4Decimal(lineStart);
-        auto [y, offset2] = parseFloat4Decimal(lineStart + offset1);
-        auto [z, _]       = parseFloat4Decimal(lineStart + offset1 + offset2);
-
-        bufPos = lineEnd - buf + 1;
-
-        size_t cell = fetch_cell(x, z);
-        particles.emplace_back(x, y, z, 1, 1, 1, cell);
-        cellMap[cell].push_back(&particles.back());
+        size_t cell = fetch_cell(values[0], values[2]);
+        particles.emplace_back(values[0], values[1], values[2], 1, 1, 1, cell);
     }
 
 
-    fclose(fp);
+    UnmapViewOfFile(data);
+    CloseHandle(hMap);
+    CloseHandle(hFile);
 }
 
 
@@ -252,24 +240,58 @@ int main(int argc, char** argv) {
     const char* file = "point_clouds/south_space.xyz";
 
     std::vector<Particle> particles;
-    std::unordered_map<size_t, std::vector<Particle*>> cellMap;
+
+
+    ska::flat_hash_map<size_t, std::vector<Particle*>> cellMap;
     std::unordered_map<size_t, SlopeResult> planes;
 
-    readXYZFast(file, particles, cellMap);
+    // readXYZFast(file, particles, cellMap);
+    readXYZFast(file, particles);
+
+    std::sort(particles.begin(), particles.end(),
+          [](const Particle& a, const Particle& b) {
+              return a.grid_index < b.grid_index;  
+          });
+
+
+    ska::flat_hash_map<size_t, Cell> tt;
+    tt[particles[0].grid_index].start_index = 0;
+    Particle* prev = &particles[0];
+    for (int p = 1; p < particles.size(); ++p) {
+        if (particles[p].grid_index != prev->grid_index) {
+            tt[prev->grid_index].end_index = p-1;
+            tt[particles[p].grid_index].start_index = p;
+        }
+        prev = &particles[p];
+    }
+    tt[particles[particles.size()-1].grid_index].end_index = particles.size()-1;
+
+
+    // for (Particle& p : particles) {
+    //     cellMap[p.grid_index].push_back(&p);
+    // }
+
+
 
     float scale = 0.5f; // arrow length
 
-    for (auto [key, value] : cellMap) {
-        planes[key] = fitPlane(value, scale);
+    for (auto [key, _] : tt) {
+        Cell& c = tt[key];
+        c.plane = fitPlane(particles, c.start_index, c.end_index, scale);
     }
 
+    
+    for (auto [key, value] : tt) {
+        Cell* c = &tt[key];
+        std::vector<size_t> neighbors = getNeighbors(particles[tt[key].start_index].x, particles[tt[key].start_index].z);
 
-    for (auto [key, value] : cellMap) {
-        std::vector<size_t> neighbors = getNeighbors(value[0]->x, value[0]->z);
-
-        for (Particle* p : cellMap[key]) {
-            int slopePercentWeightScalar = std::clamp(slopeNeighborsScalar(planes, *p, neighbors), 0, 10);
+        for (int i = tt[key].start_index; i < (*c).end_index; ++i) {
+            Particle* p = &particles[i];
+            int slopePercentWeightScalar = std::clamp(slopeNeighborsScalar(tt, *p, neighbors), 0, 10);
             ColorF color = slopeGradient[slopePercentWeightScalar];
+
+            // int slopePercentWeightScalar = std::clamp(static_cast<int>((*c).plane.slopePercent), 0, 10); 
+            // ColorF color = slopeGradient[slopePercentWeightScalar];
             p->r = color.r;
             p->g = color.g;
             p->b = color.b;
@@ -292,6 +314,12 @@ int main(int argc, char** argv) {
 
     std::cout << static_cast<double>(ms)/1000 << "\n";
 
+    // size_t mx = 0;
+    // for (auto [key, value] : cellMap) {
+    //     mx = std::max(mx, value.size());
+    // }
+
+    // std::cout << mx << "\n";
 
 
 
@@ -362,9 +390,9 @@ int main(int argc, char** argv) {
 
         // Draw particles
         glBegin(GL_POINTS);
-        for(int i = 0; i < particles.size(); i += 20) {
+        for(int i = 0; i < particles.size(); i += 50) {
             Particle& p = particles[i];
-            if (cellMap[p.grid_index].size() < 5'000) continue;
+            if (tt[p.grid_index].end_index-tt[p.grid_index].start_index < 5'000) continue;
             glColor3f(p.r, p.g, p.b);
             glVertex3f(p.x, p.y, p.z);
         }
@@ -375,7 +403,8 @@ int main(int argc, char** argv) {
 
         glLineWidth(2.0f);
         glBegin(GL_LINES);
-        for (auto& [key, plane] : planes) {
+        for (auto& [key, cell] : tt) {
+            SlopeResult& plane = tt[key].plane;
             if (!plane.valid || plane.len < 1e-6f) continue;
 
             float yOffset = 0.25f;
