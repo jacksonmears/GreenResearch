@@ -3,8 +3,8 @@
 #include <vector>
 #include <cstddef>  
 #include "../external/flat_hash_map.hpp"
-#include "Particle.h"
 
+namespace particle { struct Particle; }
 
 namespace geometry {
 
@@ -25,17 +25,6 @@ struct Cell {
     Slope plane;
 };
 
-
-/**
- * @brief Fits a local plane to a set of particles in the given range.
- * 
- * @param particles   reference to the full particle vector
- * @param start_index starting index of the cell's points
- * @param end_index   ending index (exclusive)
- * @param scale       arrow length scaling
- * @return SlopeResult  structure containing slope info
- */
-
 Slope fitPlane(std::vector<particle::Particle>& particles, size_t start_index, size_t end_index, float scale);
 
 int calculateScalarLinear(int slopePercent, float distance);
@@ -44,4 +33,8 @@ int calculateScalarPoly(int slopePercent, float distance);
 
 int slopeNeighborsScalar(const ska::flat_hash_map<size_t, Cell>& cellMap, particle::Particle& p, std::vector<Cell*>& neighbors);
 
-} // namespace geometry
+void fillCellPlane(std::vector<particle::Particle>& particles,ska::flat_hash_map<size_t, Cell>& cellMap);
+
+void fillCellMap(std::vector<particle::Particle>& particles,ska::flat_hash_map<size_t, Cell>& cellMap);
+
+} 

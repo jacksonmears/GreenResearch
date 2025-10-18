@@ -3,7 +3,11 @@
 #include <array>
 #include <tuple>
 #include <cstdint>
+#include <vector>
+#include "../external/flat_hash_map.hpp" 
 
+namespace particle { struct Particle; }
+namespace geometry { struct Cell;}
 
 namespace color {
 
@@ -27,7 +31,10 @@ constexpr std::array<ColorF, 11> slopeGradient = {{
 
 
 
+
+
 std::tuple<float, float, float> hashToColor(uint64_t h);
 
+void applyColorGradient(std::vector<particle::Particle>& particles,ska::flat_hash_map<size_t, geometry::Cell>& cellMap);
 
 }

@@ -1,4 +1,6 @@
 #include "../include/Slope.h"
+#include "../include/Config.h"
+#include "../include/Particle.h"
 #include <cmath>
 #include <algorithm>
 
@@ -107,6 +109,19 @@ int slopeNeighborsScalar(const ska::flat_hash_map<size_t, Cell>& cellMap, partic
     }
 
     return (planeCount) ? weightedScalar/planeCount : 0;
+}
+
+
+void fillCellPlane(std::vector<particle::Particle>& particles,ska::flat_hash_map<size_t, Cell>& cellMap) {
+    for (auto [key, _] : cellMap) {
+        Cell& c = cellMap[key];
+        c.plane = fitPlane(particles, c.start_index, c.end_index, config::SCALE);
+    }
+}
+
+void fillCellMap(std::vector<particle::Particle>& particles,ska::flat_hash_map<size_t, Cell>& cellMap) {
+    particle::fillCellParticles(particles, cellMap);
+    fillCellPlane(particles, cellMap);
 }
 
 } 

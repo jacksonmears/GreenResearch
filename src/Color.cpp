@@ -1,3 +1,6 @@
+#include "../include/Slope.h"
+#include "../include/Particle.h"
+#include "../include/Grid.h"
 #include "../include/Color.h"
 
 
@@ -23,5 +26,23 @@ std::tuple<float, float, float> hashToColor(uint64_t h) {
     return { norm(r), norm(g), norm(b) };
 }
 
+
+void applyColorGradient(std::vector<particle::Particle>& particles,ska::flat_hash_map<size_t, geometry::Cell>& cellMap) {
+    for (auto [key, value] : cellMap) {
+        geometry::Cell* c = &cellMap[key];
+        std::vector<geometry::Cell*> neighbors = grid::getNeighbors(particles[cellMap[key].start_index].x, particles[cellMap[key].start_index].z, cellMap);
+
+        for (int i = cellMap[key].start_index; i < (*c).end_index; ++i) {
+            particle::Particle* p = &particles[i];
+            int slopePercentWeightScalar = std::clamp(geometry::slopeNeighborsScalar(cellMap, *p, neighbors), 0, 10);
+            color::ColorF color = color::slopeGradient[slopePercentWeightScalar];
+
+            p->r = color.r;
+            p->g = color.g;
+            p->b = color.b;
+
+        }
+    }
+}
 
 }
