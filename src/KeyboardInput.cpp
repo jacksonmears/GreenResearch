@@ -3,7 +3,7 @@
 
 namespace input {
 
-void handleEvents(const SDL_Event& event, bool& running, bool& mouseDown, int& lastMouseX, int& lastMouseY, float& rotX, float& rotY, float& cameraDistance) {
+void handleEvents(const SDL_Event& event, bool& running, bool& mouseDown, int& lastMouseX, int& lastMouseY, float& rot_x, float& rot_y, float& cameraDistance) {
     switch (event.type) {
         case SDL_EVENT_QUIT:
             running = false;
@@ -31,8 +31,8 @@ void handleEvents(const SDL_Event& event, bool& running, bool& mouseDown, int& l
             if (mouseDown) {
                 int dx = event.motion.x - lastMouseX;
                 int dy = event.motion.y - lastMouseY;
-                rotY += dx * 0.5f;
-                rotX += dy * 0.5f;
+                rot_y += dx * 0.5f;
+                rot_x += dy * 0.5f;
                 lastMouseX = event.motion.x;
                 lastMouseY = event.motion.y;
             }
